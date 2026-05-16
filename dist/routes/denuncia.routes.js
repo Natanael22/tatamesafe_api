@@ -20,7 +20,7 @@ router.post('/', async (req, res) => {
         // Chama a função PostgreSQL via raw query, pois não usamos prisma.vault_Denuncia diretamente na API pra insert,
         // mas sim a procedure SECURITY DEFINER
         const result = await prisma_1.default.$queryRaw `
-      SELECT public.inserir_denuncia(
+      SELECT tatame.inserir_denuncia(
         ${tipo},
         ${bufferDesc},
         ${academia_ref},

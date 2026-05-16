@@ -7,10 +7,23 @@ import pino from 'pino';
 // Rotas
 import denunciaRoutes from './routes/denuncia.routes';
 import academiasRoutes from './routes/academias.routes';
+import avaliacoesRoutes from './routes/avaliacoes.routes';
+import certificadosRoutes from './routes/certificados.routes';
 import cryptoRoutes from './routes/crypto.routes';
+
+import swaggerUi from 'swagger-ui-express';
+import YAML from 'yamljs';
+import path from 'path';
 
 const app: Express = express();
 const logger = pino();
+
+// Trust proxy para garantir que o req.ip seja lido corretamente atrás do Nginx/Cloudflare
+app.set('trust proxy', 1);
+
+// Configuração do Swagger
+const swaggerDocument = YAML.load(path.resolve(process.cwd(), 'swagger.yaml'));
+app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument));
 
 // Middlewares Globais
 app.use(helmet());
@@ -28,6 +41,8 @@ app.use(
 // Endpoints
 app.use('/api/v1/denuncia', denunciaRoutes);
 app.use('/api/v1/academias', academiasRoutes);
+app.use('/api/v1/avaliacoes', avaliacoesRoutes);
+app.use('/api/v1/certificados', certificadosRoutes);
 app.use('/api/v1/crypto', cryptoRoutes);
 
 // Health Check

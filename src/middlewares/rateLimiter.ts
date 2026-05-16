@@ -1,4 +1,4 @@
-import { rateLimit } from 'express-rate-limit';
+import { rateLimit, ipKeyGenerator } from 'express-rate-limit';
 import { RedisStore } from 'rate-limit-redis';
 import Redis from 'ioredis';
 import { createHash } from 'crypto';
@@ -14,11 +14,14 @@ export const denunciaLimiter = rateLimit({
   store: new RedisStore({
     sendCommand: (...args: string[]) => redisClient.call(args[0], ...args.slice(1)) as any,
   }),
-  keyGenerator: (req) => {
-    const forwarded = req.headers['x-forwarded-for'];
-    const ip = Array.isArray(forwarded) ? forwarded[0] : (forwarded as string) || req.ip || 'unknown';
+  keyGenerator: (req, res) => {
+    const rawIp = req.ip || req.headers['x-forwarded-for']?.toString() || 'unknown';
+    const ip = ipKeyGenerator(rawIp);
     // Hash IP to avoid storing PII in redis
     return createHash('sha256').update(ip + RATE_LIMIT_SALT).digest('hex');
+  },
+  validate: {
+    xForwardedForHeader: false,
   },
   skip: (req) => req.body?.urgencia === 'CRITICA', // Don't block emergencies
 });

@@ -1,13 +1,9 @@
--- Create the vault schema if it doesn't exist
-CREATE SCHEMA IF NOT EXISTS vault;
-
--- Create the Denuncia table in the vault schema
--- (Normally Prisma migration would create this, but since we are doing custom schema permissions, we ensure it exists)
--- Or we just assume Prisma already ran the schema creation.
--- This file is mainly to configure the SECURITY DEFINER function.
+-- Create the tatame_vault schema if it doesn't exist
+CREATE SCHEMA IF NOT EXISTS tatame_vault;
+CREATE SCHEMA IF NOT EXISTS tatame;
 
 -- Function to insert a complaint without giving direct insert permission to the public role
-CREATE OR REPLACE FUNCTION public.inserir_denuncia(
+CREATE OR REPLACE FUNCTION tatame.inserir_denuncia(
   p_tipo TEXT,
   p_descricao_enc BYTEA,
   p_academia_ref TEXT,
@@ -16,7 +12,7 @@ CREATE OR REPLACE FUNCTION public.inserir_denuncia(
 ) RETURNS TEXT
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public
+SET search_path = tatame, tatame_vault
 AS $$
 DECLARE
   v_protocolo TEXT;
@@ -24,8 +20,8 @@ BEGIN
   -- Generate Protocol: TS-YYYY-XXXXXX
   v_protocolo := 'TS-' || to_char(CURRENT_DATE, 'YYYY') || '-' || upper(substring(md5(random()::text) from 1 for 6));
   
-  -- Insert into the vault schema
-  INSERT INTO vault."Denuncia" (
+  -- Insert into the tatame_vault schema
+  INSERT INTO tatame_vault."Denuncia" (
     "protocolo", 
     "tipo", 
     "descricao_enc", 

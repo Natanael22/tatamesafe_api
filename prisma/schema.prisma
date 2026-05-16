@@ -1,10 +1,12 @@
 generator client {
   provider        = "prisma-client-js"
+  previewFeatures = ["multiSchema"]
 }
 
 datasource db {
   provider = "postgresql"
-  schemas  = ["public", "vault"]
+  url      = env("DATABASE_URL")
+  schemas  = ["tatame", "tatame_vault"]
 }
 
 // ── ENUMS ──────────────────────────────────────────────
@@ -13,7 +15,7 @@ enum UserTipo {
   ALUNO
   ACADEMIA
   ADMIN
-  @@schema("public")
+  @@schema("tatame")
 }
 
 enum SeloNivel {
@@ -21,7 +23,7 @@ enum SeloNivel {
   BRONZE
   PRATA
   OURO
-  @@schema("public")
+  @@schema("tatame")
 }
 
 enum CursoTipo {
@@ -29,7 +31,7 @@ enum CursoTipo {
   PREVENCAO_ASSEDIO
   INCLUSAO
   OUTRO
-  @@schema("public")
+  @@schema("tatame")
 }
 
 enum DenunciaTipo {
@@ -37,7 +39,7 @@ enum DenunciaTipo {
   ASSEDIO_MORAL
   VIOLENCIA
   OUTRO
-  @@schema("vault")
+  @@schema("tatame_vault")
 }
 
 enum DenunciaStatus {
@@ -45,7 +47,7 @@ enum DenunciaStatus {
   TRIAGEM
   EM_APURACAO
   ENCERRADA
-  @@schema("vault")
+  @@schema("tatame_vault")
 }
 
 enum Urgencia {
@@ -53,7 +55,7 @@ enum Urgencia {
   MEDIA
   ALTA
   CRITICA
-  @@schema("vault")
+  @@schema("tatame_vault")
 }
 
 // ── USUÁRIOS ──────────────────────────────────────────────
@@ -68,7 +70,7 @@ model User {
   academia    Academia?
   avaliacoes  Avaliacao[]
 
-  @@schema("public")
+  @@schema("tatame")
 }
 
 // ── ACADEMIAS ─────────────────────────────────────────────
@@ -91,7 +93,7 @@ model Academia {
   avaliacoes      Avaliacao[]
   user            User      @relation(fields: [user_id], references: [id])
 
-  @@schema("public")
+  @@schema("tatame")
 }
 
 // ── CERTIFICADOS DE CURSO ─────────────────────────────────
@@ -105,7 +107,7 @@ model Certificado {
   url_pdf       String?
   academia      Academia  @relation(fields: [academia_id], references: [id])
 
-  @@schema("public")
+  @@schema("tatame")
 }
 
 // ── AVALIAÇÕES ────────────────────────────────────────────
@@ -120,7 +122,7 @@ model Avaliacao {
   academia      Academia  @relation(fields: [academia_id], references: [id])
   user          User      @relation(fields: [user_id], references: [id])
 
-  @@schema("public")
+  @@schema("tatame")
 }
 
 // ── DENÚNCIAS (VAULT) ─────────────────────────────────────
@@ -138,7 +140,7 @@ model Denuncia {
   criado_em       DateTime      @default(now())
   atualizado_em   DateTime      @updatedAt
 
-  @@schema("vault")
+  @@schema("tatame_vault")
 }
 
 model DenunciaEvidencia {
@@ -150,7 +152,7 @@ model DenunciaEvidencia {
   criado_em    DateTime @default(now())
   denuncia     Denuncia @relation(fields: [denuncia_id], references: [id])
 
-  @@schema("vault")
+  @@schema("tatame_vault")
 }
 
 model DenunciaHistorico {
@@ -163,5 +165,5 @@ model DenunciaHistorico {
   criado_em    DateTime       @default(now())
   denuncia     Denuncia       @relation(fields: [denuncia_id], references: [id])
 
-  @@schema("vault")
+  @@schema("tatame_vault")
 }

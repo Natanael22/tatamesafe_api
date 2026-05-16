@@ -1,8 +1,14 @@
 import { Request, Response, NextFunction } from 'express';
+import jwt from 'jsonwebtoken';
 
-// Exemplo básico usando um middleware customizado para Supabase JWT
-// Para uma integração real, você validaria a assinatura JWT localmente
-// ou usando @supabase/supabase-js
+// Extend Express Request to include user
+declare global {
+  namespace Express {
+    interface Request {
+      user?: any;
+    }
+  }
+}
 
 export const requireAuth = (req: Request, res: Response, next: NextFunction) => {
   const authHeader = req.headers.authorization;
@@ -13,10 +19,21 @@ export const requireAuth = (req: Request, res: Response, next: NextFunction) => 
   const token = authHeader.split(' ')[1];
   
   try {
-    // Validar token com jwt.verify usando JWT_SECRET ou chave pública do Supabase
-    // req.user = decodedToken;
+    const jwtSecret = process.env.JWT_SECRET;
+    if (!jwtSecret) {
+      console.error('JWT_SECRET não configurado');
+      return res.status(500).json({ error: 'Erro de configuração do servidor' });
+    }
+
+    // Valida o token JWT do Supabase
+    const decoded = jwt.verify(token, jwtSecret);
+    req.user = decoded;
+    
     next();
-  } catch (err) {
-    return res.status(401).json({ error: 'Token inválido ou expirado' });
+  } catch (err: any) {
+    if (err.name === 'TokenExpiredError') {
+      return res.status(401).json({ error: 'Token expirado' });
+    }
+    return res.status(401).json({ error: 'Token inválido' });
   }
 };
