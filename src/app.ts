@@ -10,6 +10,7 @@ import academiasRoutes from './routes/academias.routes';
 import avaliacoesRoutes from './routes/avaliacoes.routes';
 import certificadosRoutes from './routes/certificados.routes';
 import cryptoRoutes from './routes/crypto.routes';
+import usersRoutes from './routes/users.routes';
 
 import swaggerUi from 'swagger-ui-express';
 import YAML from 'yamljs';
@@ -44,6 +45,7 @@ app.use('/api/v1/academias', academiasRoutes);
 app.use('/api/v1/avaliacoes', avaliacoesRoutes);
 app.use('/api/v1/certificados', certificadosRoutes);
 app.use('/api/v1/crypto', cryptoRoutes);
+app.use('/api/v1/users', usersRoutes);
 
 // Health Check
 app.get('/health', (req: Request, res: Response) => {

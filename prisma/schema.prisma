@@ -122,6 +122,7 @@ model Avaliacao {
   academia      Academia  @relation(fields: [academia_id], references: [id])
   user          User      @relation(fields: [user_id], references: [id])
 
+  @@unique([user_id, academia_id])
   @@schema("tatame")
 }
 

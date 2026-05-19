@@ -3,6 +3,7 @@ import { Queue } from 'bullmq';
 import Redis from 'ioredis';
 import prisma from '../lib/prisma';
 import { denunciaLimiter } from '../middlewares/rateLimiter';
+import { requireAuth } from '../middlewares/auth.middleware';
 
 const router = Router();
 const connection = new Redis(process.env.REDIS_URL || 'redis://localhost:6379');
@@ -46,6 +47,81 @@ router.post('/', async (req, res) => {
   } catch (error: any) {
     console.error('Erro ao registrar denúncia:', error);
     res.status(500).json({ error: 'Erro interno ao registrar denúncia' });
+  }
+});
+
+// Privada (Admin) - Listagem de denúncias
+router.get('/admin', requireAuth, async (req, res) => {
+  try {
+    const auth_id = req.user?.sub;
+    const user = await prisma.user.findUnique({ where: { auth_id } });
+    
+    if (!user || user.tipo !== 'ADMIN') {
+      return res.status(403).json({ error: 'Acesso negado: Requer privilégios de administrador' });
+    }
+
+    const denuncias = await prisma.denuncia.findMany({
+      orderBy: [
+        { urgencia: 'desc' }, // Critica primeiro
+        { criado_em: 'desc' }
+      ],
+      include: {
+        historico: {
+          orderBy: { criado_em: 'desc' }
+        }
+      }
+    });
+
+    res.json(denuncias);
+  } catch (error) {
+    res.status(500).json({ error: 'Erro interno ao listar denúncias' });
+  }
+});
+
+// Privada (Admin) - Atualização de status da denúncia
+router.patch('/admin/:id/status', requireAuth, async (req, res) => {
+  try {
+    const auth_id = req.user?.sub;
+    const user = await prisma.user.findUnique({ where: { auth_id } });
+    
+    if (!user || user.tipo !== 'ADMIN') {
+      return res.status(403).json({ error: 'Acesso negado: Requer privilégios de administrador' });
+    }
+
+    const { id } = req.params;
+    const { status, nota_interna } = req.body;
+
+    if (!status) {
+      return res.status(400).json({ error: 'O novo status é obrigatório' });
+    }
+
+    const denuncia = await prisma.denuncia.findUnique({ where: { id: String(id) } });
+    if (!denuncia) {
+      return res.status(404).json({ error: 'Denúncia não encontrada' });
+    }
+
+    const status_de = denuncia.status;
+    
+    // Atualiza status e registra no histórico usando transação
+    const [updatedDenuncia, historico] = await prisma.$transaction([
+      prisma.denuncia.update({
+        where: { id: String(id) },
+        data: { status }
+      }),
+      prisma.denunciaHistorico.create({
+        data: {
+          denuncia_id: String(id),
+          status_de,
+          status_para: status,
+          nota_interna,
+          operador_id: user.id
+        }
+      })
+    ]);
+
+    res.json({ denuncia: updatedDenuncia, historico });
+  } catch (error) {
+    res.status(500).json({ error: 'Erro interno ao atualizar status da denúncia' });
   }
 });
 
