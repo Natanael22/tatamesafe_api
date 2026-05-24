@@ -4,14 +4,14 @@ import Redis from 'ioredis';
 import prisma from '../lib/prisma';
 import { denunciaLimiter } from '../middlewares/rateLimiter';
 import { requireAuth } from '../middlewares/auth.middleware';
+import logger from '../lib/logger';
 
 const router = Router();
 const connection = new Redis(process.env.REDIS_URL || 'redis://localhost:6379');
 const denunciaQueue = new Queue('denuncia-queue', { connection });
 
-router.use(denunciaLimiter);
 
-router.post('/', async (req, res) => {
+router.post('/', denunciaLimiter, async (req, res) => {
   try {
     const { tipo, descricao_enc, academia_ref, urgencia, envolve_menor } = req.body;
 
@@ -45,7 +45,7 @@ router.post('/', async (req, res) => {
 
     res.status(201).json({ protocolo });
   } catch (error: any) {
-    console.error('Erro ao registrar denúncia:', error);
+    logger.error(error, 'Erro ao registrar denúncia');
     res.status(500).json({ error: 'Erro interno ao registrar denúncia' });
   }
 });
@@ -55,14 +55,14 @@ router.get('/admin', requireAuth, async (req, res) => {
   try {
     const auth_id = req.user?.sub;
     const user = await prisma.user.findUnique({ where: { auth_id } });
-    
+
     if (!user || user.tipo !== 'ADMIN') {
       return res.status(403).json({ error: 'Acesso negado: Requer privilégios de administrador' });
     }
 
     const denuncias = await prisma.denuncia.findMany({
       orderBy: [
-        { urgencia: 'desc' }, // Critica primeiro
+        { urgencia: 'desc' },
         { criado_em: 'desc' }
       ],
       include: {
@@ -74,6 +74,7 @@ router.get('/admin', requireAuth, async (req, res) => {
 
     res.json(denuncias);
   } catch (error) {
+    logger.error(error, 'Erro interno ao listar denúncias');
     res.status(500).json({ error: 'Erro interno ao listar denúncias' });
   }
 });
@@ -83,7 +84,7 @@ router.patch('/admin/:id/status', requireAuth, async (req, res) => {
   try {
     const auth_id = req.user?.sub;
     const user = await prisma.user.findUnique({ where: { auth_id } });
-    
+
     if (!user || user.tipo !== 'ADMIN') {
       return res.status(403).json({ error: 'Acesso negado: Requer privilégios de administrador' });
     }
@@ -121,6 +122,7 @@ router.patch('/admin/:id/status', requireAuth, async (req, res) => {
 
     res.json({ denuncia: updatedDenuncia, historico });
   } catch (error) {
+    logger.error(error, 'Erro interno ao atualizar status da denúncia');
     res.status(500).json({ error: 'Erro interno ao atualizar status da denúncia' });
   }
 });
@@ -151,6 +153,7 @@ router.get('/status/:protocolo', async (req, res) => {
       mensagem_publica: 'Denúncia recebida e em processamento', // Pode variar por status
     });
   } catch (error) {
+    logger.error(error, 'Erro interno ao consultar status da denúncia');
     res.status(500).json({ error: 'Erro interno ao consultar status' });
   }
 });

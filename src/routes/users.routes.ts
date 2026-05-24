@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import prisma from '../lib/prisma';
 import { requireAuth } from '../middlewares/auth.middleware';
+import logger from '../lib/logger';
 
 const router = Router();
 
@@ -33,6 +34,7 @@ router.get('/me', requireAuth, async (req, res) => {
 
     res.json(user);
   } catch (error) {
+    logger.error(error, 'Erro interno ao buscar perfil do usuário');
     res.status(500).json({ error: 'Erro interno ao buscar perfil' });
   }
 });
@@ -61,6 +63,7 @@ router.patch('/me', requireAuth, async (req, res) => {
 
     res.json(updated);
   } catch (error) {
+    logger.error(error, 'Erro interno ao atualizar perfil do usuário');
     res.status(500).json({ error: 'Erro interno ao atualizar perfil' });
   }
 });

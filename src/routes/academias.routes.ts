@@ -1,18 +1,20 @@
 import { Router } from 'express';
 import prisma from '../lib/prisma';
 import { requireAuth } from '../middlewares/auth.middleware';
+import logger from '../lib/logger';
 
 const router = Router();
 
-// Pública - Lista academias certificadas
+// Pública - Lista academias (ativas)
 router.get('/', async (req, res) => {
   try {
     const academias = await prisma.academia.findMany({
-      where: { ativa: true, verificada: true },
-      select: { id: true, nome: true, endereco: true, nivel_selo: true, foto_url: true }
+      where: { ativa: true },
+      select: { id: true, nome: true, endereco: true, nivel_selo: true, foto_url: true, verificada: true }
     });
     res.json(academias);
   } catch (error) {
+    logger.error(error, 'Erro interno ao buscar academias');
     res.status(500).json({ error: 'Erro interno ao buscar academias' });
   }
 });
@@ -27,6 +29,7 @@ router.get('/:id', async (req, res) => {
     if (!academia) return res.status(404).json({ error: 'Academia não encontrada' });
     res.json(academia);
   } catch (error) {
+    logger.error(error, 'Erro interno ao buscar academia específica');
     res.status(500).json({ error: 'Erro interno ao buscar academia' });
   }
 });
@@ -74,6 +77,7 @@ router.post('/', requireAuth, async (req, res) => {
 
     res.status(201).json(academia);
   } catch (error: any) {
+    logger.error(error, 'Erro interno ao criar academia');
     res.status(500).json({ error: 'Erro interno ao criar academia' });
   }
 });
@@ -101,6 +105,7 @@ router.patch('/:id', requireAuth, async (req, res) => {
 
     res.json(updated);
   } catch (error) {
+    logger.error(error, 'Erro interno ao atualizar academia');
     res.status(500).json({ error: 'Erro interno ao atualizar academia' });
   }
 });
@@ -134,6 +139,7 @@ router.post('/:id/verificar', requireAuth, async (req, res) => {
 
     res.json({ message: 'Status de certificação da academia atualizado com sucesso', academia: updated });
   } catch (error) {
+    logger.error(error, 'Erro interno ao verificar academia pelo administrador');
     res.status(500).json({ error: 'Erro interno ao verificar academia' });
   }
 });

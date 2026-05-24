@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import prisma from '../lib/prisma';
 import { requireAuth } from '../middlewares/auth.middleware';
+import logger from '../lib/logger';
 
 const router = Router();
 
@@ -37,6 +38,7 @@ router.get('/', async (req, res) => {
 
     res.json(formatadas);
   } catch (error) {
+    logger.error(error, 'Erro interno ao buscar avaliações');
     res.status(500).json({ error: 'Erro interno ao buscar avaliações' });
   }
 });
@@ -91,6 +93,7 @@ router.post('/', requireAuth, async (req, res) => {
 
     res.status(201).json(avaliacao);
   } catch (error: any) {
+    logger.error(error, 'Erro ao processar criação ou atualização de avaliação');
     res.status(500).json({ error: 'Erro ao processar avaliação' });
   }
 });

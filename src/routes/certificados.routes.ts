@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import prisma from '../lib/prisma';
 import { requireAuth } from '../middlewares/auth.middleware';
+import logger from '../lib/logger';
 
 const router = Router();
 
@@ -23,6 +24,7 @@ router.get('/', async (req, res) => {
 
     res.json(certificados);
   } catch (error) {
+    logger.error(error, 'Erro interno ao buscar certificados');
     res.status(500).json({ error: 'Erro interno ao buscar certificados' });
   }
 });
@@ -45,6 +47,7 @@ router.get('/:id', async (req, res) => {
 
     res.json(certificado);
   } catch (error) {
+    logger.error(error, 'Erro interno ao consultar certificado específico');
     res.status(500).json({ error: 'Erro interno ao consultar certificado' });
   }
 });
@@ -84,6 +87,7 @@ router.post('/', requireAuth, async (req, res) => {
 
     res.status(201).json(certificado);
   } catch (error: any) {
+    logger.error(error, 'Erro ao emitir novo certificado');
     res.status(500).json({ error: 'Erro ao emitir certificado' });
   }
 });

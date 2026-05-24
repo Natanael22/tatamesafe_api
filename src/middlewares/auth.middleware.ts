@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
+import logger from '../lib/logger';
 
 // Extend Express Request to include user
 declare global {
@@ -21,7 +22,7 @@ export const requireAuth = (req: Request, res: Response, next: NextFunction) => 
   try {
     const jwtSecret = process.env.JWT_SECRET;
     if (!jwtSecret) {
-      console.error('JWT_SECRET não configurado');
+      logger.error(new Error('JWT_SECRET não configurado nas variáveis de ambiente'));
       return res.status(500).json({ error: 'Erro de configuração do servidor' });
     }
 
