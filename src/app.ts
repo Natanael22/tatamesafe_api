@@ -27,7 +27,32 @@ app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument));
 
 // Middlewares Globais
 app.use(helmet());
-app.use(cors({ origin: process.env.CORS_ORIGIN || '*' }));
+
+const allowedOrigins = process.env.CORS_ORIGIN
+  ? process.env.CORS_ORIGIN.split(',').map((o) => o.trim())
+  : ['*'];
+
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      // Permitir requisições sem origem (como aplicativos móveis, curl, etc.)
+      if (!origin) return callback(null, true);
+
+      if (allowedOrigins.includes('*') || allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+
+      // Em ambiente de desenvolvimento, permitir qualquer porta no localhost
+      const isDev = process.env.NODE_ENV?.trim() === 'development';
+      if (isDev && (origin.startsWith('http://localhost:') || origin.startsWith('http://127.0.0.1:'))) {
+        return callback(null, true);
+      }
+
+      callback(new Error('Bloqueado por CORS'));
+    },
+  })
+);
+
 app.use(express.json());
 
 const isDev = process.env.NODE_ENV?.trim() === 'development';

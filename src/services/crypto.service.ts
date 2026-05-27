@@ -7,22 +7,43 @@ export class CryptoService {
   private static privateKey: string | null = null;
 
   public static initializeKeys() {
-    // For MVP, we load from file or generate ephemeral
-    const keyPath = process.env.RSA_PRIVATE_KEY_PATH || path.join(__dirname, '../../keys/rsa_private.pem');
+    const keyPath = process.env.RSA_PRIVATE_KEY_PATH 
+      ? path.resolve(process.env.RSA_PRIVATE_KEY_PATH) 
+      : path.join(__dirname, '../../keys/rsa_private.pem');
     const pubPath = keyPath.replace('private', 'public');
 
     if (fs.existsSync(keyPath) && fs.existsSync(pubPath)) {
       this.privateKey = fs.readFileSync(keyPath, 'utf8');
       this.publicKey = fs.readFileSync(pubPath, 'utf8');
     } else {
-      console.warn('Chaves RSA não encontradas. Gerando par de chaves efêmero em memória para desenvolvimento...');
-      const { publicKey, privateKey } = crypto.generateKeyPairSync('rsa', {
-        modulusLength: 2048,
-        publicKeyEncoding: { type: 'spki', format: 'pem' },
-        privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
-      });
-      this.publicKey = publicKey;
-      this.privateKey = privateKey;
+      console.warn(`Chaves RSA não encontradas no disco. Gerando e persistindo novo par de chaves em: ${keyPath}`);
+      try {
+        const dir = path.dirname(keyPath);
+        if (!fs.existsSync(dir)) {
+          fs.mkdirSync(dir, { recursive: true });
+        }
+        
+        const { publicKey, privateKey } = crypto.generateKeyPairSync('rsa', {
+          modulusLength: 2048,
+          publicKeyEncoding: { type: 'spki', format: 'pem' },
+          privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
+        });
+
+        fs.writeFileSync(keyPath, privateKey, 'utf8');
+        fs.writeFileSync(pubPath, publicKey, 'utf8');
+
+        this.privateKey = privateKey;
+        this.publicKey = publicKey;
+      } catch (err) {
+        console.error('Erro ao salvar as chaves RSA geradas no disco. Usando chaves efêmeras em memória...', err);
+        const { publicKey, privateKey } = crypto.generateKeyPairSync('rsa', {
+          modulusLength: 2048,
+          publicKeyEncoding: { type: 'spki', format: 'pem' },
+          privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
+        });
+        this.publicKey = publicKey;
+        this.privateKey = privateKey;
+      }
     }
   }
 
