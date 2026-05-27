@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import prisma from '../lib/prisma';
+import supabase from '../lib/supabase';
 import { requireAuth } from '../middlewares/auth.middleware';
 import logger from '../lib/logger';
 
@@ -9,21 +9,21 @@ const router = Router();
 router.get('/', async (req, res) => {
   try {
     const { academia_id } = req.query;
-    
-    const whereClause = academia_id ? { academia_id: String(academia_id) } : {};
 
-    const avaliacoes = await prisma.avaliacao.findMany({
-      where: whereClause,
-      include: {
-        user: {
-          select: { nome: true }
-        }
-      },
-      orderBy: { criado_em: 'desc' }
-    });
+    let query = supabase
+      .from('Avaliacao')
+      .select('*, user:User(nome)')
+      .order('criado_em', { ascending: false });
 
-    const formatadas = avaliacoes.map(a => {
-      const categorias: any = a.categorias || {};
+    if (academia_id) {
+      query = query.eq('academia_id', String(academia_id));
+    }
+
+    const { data, error } = await query;
+    if (error) throw error;
+
+    const formatadas = (data || []).map((a: any) => {
+      const categorias = a.categorias || {};
       const isAnonima = categorias.anonima === true;
       return {
         id: a.id,
@@ -49,11 +49,21 @@ router.post('/', requireAuth, async (req, res) => {
     const auth_id = req.user?.sub;
     if (!auth_id) return res.status(400).json({ error: 'Token inválido' });
 
-    let user = await prisma.user.findUnique({ where: { auth_id } });
+    // Busca ou cria usuário
+    let { data: user } = await supabase
+      .from('User')
+      .select('id')
+      .eq('auth_id', auth_id)
+      .maybeSingle();
+
     if (!user) {
-      user = await prisma.user.create({
-        data: { auth_id, tipo: 'ALUNO', email: req.user?.email || null }
-      });
+      const { data: created, error: createErr } = await supabase
+        .from('User')
+        .insert({ auth_id, tipo: 'ALUNO', email: req.user?.email || null })
+        .select('id')
+        .single();
+      if (createErr) throw createErr;
+      user = created;
     }
 
     const { academia_id, nota, comentario, anonima, categorias } = req.body;
@@ -68,27 +78,38 @@ router.post('/', requireAuth, async (req, res) => {
 
     const jsonCategorias = { ...(categorias || {}), anonima: anonima || false };
 
-    // Verifica se já existe avaliação
-    const existing = await prisma.avaliacao.findFirst({
-      where: { user_id: user.id, academia_id: String(academia_id) }
-    });
+    // Verifica se já existe avaliação (1 por usuário por academia)
+    const { data: existing } = await supabase
+      .from('Avaliacao')
+      .select('id')
+      .eq('user_id', user!.id)
+      .eq('academia_id', String(academia_id))
+      .maybeSingle();
 
     let avaliacao;
     if (existing) {
-      avaliacao = await prisma.avaliacao.update({
-        where: { id: existing.id },
-        data: { nota, comentario, categorias: jsonCategorias }
-      });
+      const { data: updated, error } = await supabase
+        .from('Avaliacao')
+        .update({ nota, comentario, categorias: jsonCategorias })
+        .eq('id', existing.id)
+        .select()
+        .single();
+      if (error) throw error;
+      avaliacao = updated;
     } else {
-      avaliacao = await prisma.avaliacao.create({
-        data: {
-          user_id: user.id,
+      const { data: created, error } = await supabase
+        .from('Avaliacao')
+        .insert({
+          user_id: user!.id,
           academia_id: String(academia_id),
           nota,
           comentario,
-          categorias: jsonCategorias
-        }
-      });
+          categorias: jsonCategorias,
+        })
+        .select()
+        .single();
+      if (error) throw error;
+      avaliacao = created;
     }
 
     res.status(201).json(avaliacao);

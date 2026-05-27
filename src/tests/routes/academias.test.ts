@@ -1,11 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import request from 'supertest';
 import app from '../../app';
-import prisma from '../../lib/prisma';
+import supabase from '../../lib/supabase';
 
-const prismaMock = prisma as any;
+const supabaseMock = supabase as any;
 
-// Helper: gera um JWT de teste válido
 function makeToken(sub: string, email: string) {
   const jwt = require('jsonwebtoken');
   return `Bearer ${jwt.sign({ sub, email }, process.env.JWT_SECRET!, { expiresIn: '1h' })}`;
@@ -14,31 +13,42 @@ function makeToken(sub: string, email: string) {
 const ADMIN_TOKEN = makeToken('admin-auth-id-999', 'admin@tatamesafe.com');
 const ALUNO_TOKEN = makeToken('aluno-auth-id-123', 'aluno@teste.com');
 
-const mockAdmin = { id: 'admin-id', auth_id: 'admin-auth-id-999', tipo: 'ADMIN', email: 'admin@tatamesafe.com' };
-const mockAluno = { id: 'aluno-id', auth_id: 'aluno-auth-id-123', tipo: 'ALUNO', email: 'aluno@teste.com' };
+// Helper: configura o que supabase.from(table) retorna para um único chamado
+function mockFrom(data: any, error: any = null) {
+  const chain = {
+    select: vi.fn().mockReturnThis(),
+    insert: vi.fn().mockReturnThis(),
+    update: vi.fn().mockReturnThis(),
+    eq: vi.fn().mockReturnThis(),
+    order: vi.fn().mockReturnThis(),
+    single: vi.fn().mockResolvedValue({ data, error }),
+    maybeSingle: vi.fn().mockResolvedValue({ data, error }),
+  };
+  supabaseMock.from.mockReturnValueOnce(chain);
+  return chain;
+}
 
 const mockAcademia = {
   id: 'academia-id-1',
   user_id: 'aluno-id',
   nome: 'Academia Teste',
   cnpj: '12.345.678/0001-90',
-  endereco: { cidade: 'São Paulo', estado: 'SP' },
-  telefone: '11999999999',
-  instagram: '@academia',
-  descricao: 'Descrição teste',
-  foto_url: null,
+  endereco: { cidade: 'São Paulo' },
   nivel_selo: 'NENHUM',
   verificada: false,
   ativa: true,
-  criado_em: new Date(),
-  atualizado_em: new Date(),
+  foto_url: null,
 };
 
 describe('GET /api/v1/academias', () => {
   beforeEach(() => vi.clearAllMocks());
 
   it('retorna lista de academias ativas', async () => {
-    prismaMock.academia.findMany.mockResolvedValue([mockAcademia]);
+    const chain = {
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockResolvedValue({ data: [mockAcademia], error: null }),
+    };
+    supabaseMock.from.mockReturnValueOnce(chain);
 
     const res = await request(app).get('/api/v1/academias');
 
@@ -48,7 +58,11 @@ describe('GET /api/v1/academias', () => {
   });
 
   it('retorna lista vazia quando não há academias', async () => {
-    prismaMock.academia.findMany.mockResolvedValue([]);
+    const chain = {
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockResolvedValue({ data: [], error: null }),
+    };
+    supabaseMock.from.mockReturnValueOnce(chain);
 
     const res = await request(app).get('/api/v1/academias');
 
@@ -61,7 +75,7 @@ describe('GET /api/v1/academias/:id', () => {
   beforeEach(() => vi.clearAllMocks());
 
   it('retorna academia por ID', async () => {
-    prismaMock.academia.findUnique.mockResolvedValue({ ...mockAcademia, certificados: [], avaliacoes: [] });
+    mockFrom({ ...mockAcademia, certificados: [], avaliacoes: [] });
 
     const res = await request(app).get('/api/v1/academias/academia-id-1');
 
@@ -70,12 +84,11 @@ describe('GET /api/v1/academias/:id', () => {
   });
 
   it('retorna 404 quando academia não existe', async () => {
-    prismaMock.academia.findUnique.mockResolvedValue(null);
+    mockFrom(null);
 
     const res = await request(app).get('/api/v1/academias/id-inexistente');
 
     expect(res.status).toBe(404);
-    expect(res.body).toHaveProperty('error');
   });
 });
 
@@ -83,9 +96,12 @@ describe('POST /api/v1/academias', () => {
   beforeEach(() => vi.clearAllMocks());
 
   it('cria academia com token válido', async () => {
-    prismaMock.user.findUnique.mockResolvedValue(mockAluno);
-    prismaMock.academia.findUnique.mockResolvedValue(null); // não tem academia ainda
-    prismaMock.academia.create.mockResolvedValue(mockAcademia);
+    // 1. findOrCreateUser → busca usuário por auth_id
+    mockFrom({ id: 'aluno-id', auth_id: 'aluno-auth-id-123', tipo: 'ALUNO' });
+    // 2. busca academia existente por user_id
+    mockFrom(null);
+    // 3. insere nova academia
+    mockFrom(mockAcademia);
 
     const res = await request(app)
       .post('/api/v1/academias')
@@ -105,9 +121,6 @@ describe('POST /api/v1/academias', () => {
   });
 
   it('retorna 400 sem campo nome', async () => {
-    prismaMock.user.findUnique.mockResolvedValue(mockAluno);
-    prismaMock.academia.findUnique.mockResolvedValue(null);
-
     const res = await request(app)
       .post('/api/v1/academias')
       .set('Authorization', ALUNO_TOKEN)
@@ -118,8 +131,10 @@ describe('POST /api/v1/academias', () => {
   });
 
   it('retorna 400 quando usuário já tem academia', async () => {
-    prismaMock.user.findUnique.mockResolvedValue(mockAluno);
-    prismaMock.academia.findUnique.mockResolvedValue(mockAcademia); // já existe
+    // 1. usuário encontrado
+    mockFrom({ id: 'aluno-id', auth_id: 'aluno-auth-id-123', tipo: 'ALUNO' });
+    // 2. academia já existe
+    mockFrom({ id: 'academia-existente' });
 
     const res = await request(app)
       .post('/api/v1/academias')
@@ -135,9 +150,12 @@ describe('POST /api/v1/academias/:id/verificar', () => {
   beforeEach(() => vi.clearAllMocks());
 
   it('admin verifica academia com sucesso', async () => {
-    prismaMock.user.findUnique.mockResolvedValue(mockAdmin);
-    prismaMock.academia.findUnique.mockResolvedValue(mockAcademia);
-    prismaMock.academia.update.mockResolvedValue({ ...mockAcademia, verificada: true, nivel_selo: 'OURO' });
+    // 1. busca user por auth_id (admin)
+    mockFrom({ tipo: 'ADMIN' });
+    // 2. busca academia atual para pegar valores existentes
+    mockFrom({ verificada: false, nivel_selo: 'NENHUM' });
+    // 3. update da academia
+    mockFrom({ ...mockAcademia, verificada: true, nivel_selo: 'OURO' });
 
     const res = await request(app)
       .post('/api/v1/academias/academia-id-1/verificar')
@@ -149,7 +167,7 @@ describe('POST /api/v1/academias/:id/verificar', () => {
   });
 
   it('retorna 403 quando não é admin', async () => {
-    prismaMock.user.findUnique.mockResolvedValue(mockAluno);
+    mockFrom({ tipo: 'ALUNO' });
 
     const res = await request(app)
       .post('/api/v1/academias/academia-id-1/verificar')

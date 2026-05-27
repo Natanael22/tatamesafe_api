@@ -4,47 +4,180 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = require("express");
-const prisma_1 = __importDefault(require("../lib/prisma"));
+const supabase_1 = __importDefault(require("../lib/supabase"));
 const auth_middleware_1 = require("../middlewares/auth.middleware");
+const logger_1 = __importDefault(require("../lib/logger"));
 const router = (0, express_1.Router)();
-// Pública - Lista academias certificadas
+// Helper para buscar ou criar usuário local a partir do auth_id do token
+async function findOrCreateUser(auth_id, email, tipo = 'ALUNO') {
+    const { data: existing } = await supabase_1.default
+        .from('User')
+        .select('*')
+        .eq('auth_id', auth_id)
+        .maybeSingle();
+    if (existing)
+        return existing;
+    const { data: created, error } = await supabase_1.default
+        .from('User')
+        .insert({ auth_id, tipo, email: email || null })
+        .select()
+        .single();
+    if (error)
+        throw error;
+    return created;
+}
+// Pública - Lista academias (ativas)
 router.get('/', async (req, res) => {
     try {
-        const academias = await prisma_1.default.academia.findMany({
-            where: { ativa: true, verificada: true },
-            select: { id: true, nome: true, endereco: true, nivel_selo: true, foto_url: true }
-        });
-        res.json(academias);
+        const { data, error } = await supabase_1.default
+            .from('Academia')
+            .select('id, nome, endereco, nivel_selo, foto_url, verificada')
+            .eq('ativa', true);
+        if (error)
+            throw error;
+        res.json(data);
     }
     catch (error) {
+        logger_1.default.error(error, 'Erro interno ao buscar academias');
         res.status(500).json({ error: 'Erro interno ao buscar academias' });
     }
 });
 // Pública - Perfil da academia
 router.get('/:id', async (req, res) => {
     try {
-        const academia = await prisma_1.default.academia.findUnique({
-            where: { id: req.params.id },
-            include: { certificados: true, avaliacoes: true }
-        });
-        if (!academia)
+        const { data, error } = await supabase_1.default
+            .from('Academia')
+            .select('*, certificados:Certificado(*), avaliacoes:Avaliacao(*)')
+            .eq('id', String(req.params.id))
+            .maybeSingle();
+        if (error)
+            throw error;
+        if (!data)
             return res.status(404).json({ error: 'Academia não encontrada' });
-        res.json(academia);
+        res.json(data);
     }
     catch (error) {
+        logger_1.default.error(error, 'Erro interno ao buscar academia específica');
         res.status(500).json({ error: 'Erro interno ao buscar academia' });
     }
 });
 // Privada (Academia) - Cadastro
 router.post('/', auth_middleware_1.requireAuth, async (req, res) => {
     try {
-        // Para simplificar, assumimos o user_id vindo do token decodificado
-        // const userId = req.user.id;
-        // ... criação no db
-        res.status(201).json({ message: 'Academia criada com sucesso' });
+        const auth_id = req.user?.sub;
+        if (!auth_id)
+            return res.status(400).json({ error: 'Token inválido: sub ausente' });
+        const { nome, cnpj, endereco, telefone, instagram, descricao, foto_url } = req.body;
+        if (!nome)
+            return res.status(400).json({ error: 'O nome da academia é obrigatório' });
+        const user = await findOrCreateUser(auth_id, req.user?.email, 'ACADEMIA');
+        // Verificar se já possui academia
+        const { data: existing } = await supabase_1.default
+            .from('Academia')
+            .select('id')
+            .eq('user_id', user.id)
+            .maybeSingle();
+        if (existing) {
+            return res.status(400).json({ error: 'Usuário já possui uma academia cadastrada' });
+        }
+        const { data: academia, error } = await supabase_1.default
+            .from('Academia')
+            .insert({
+            user_id: user.id,
+            nome,
+            cnpj,
+            endereco: endereco || {},
+            telefone,
+            instagram,
+            descricao,
+            foto_url,
+            nivel_selo: 'NENHUM',
+        })
+            .select()
+            .single();
+        if (error)
+            throw error;
+        res.status(201).json(academia);
     }
     catch (error) {
-        res.status(500).json({ error: 'Erro ao criar academia' });
+        logger_1.default.error(error, 'Erro interno ao criar academia');
+        res.status(500).json({ error: 'Erro interno ao criar academia' });
+    }
+});
+// Privada (Academia) - Atualização
+router.patch('/:id', auth_middleware_1.requireAuth, async (req, res) => {
+    try {
+        const auth_id = req.user?.sub;
+        const id = String(req.params.id);
+        const { data: user } = await supabase_1.default
+            .from('User')
+            .select('id')
+            .eq('auth_id', auth_id)
+            .maybeSingle();
+        if (!user)
+            return res.status(401).json({ error: 'Usuário não encontrado' });
+        const { data: academia } = await supabase_1.default
+            .from('Academia')
+            .select('user_id')
+            .eq('id', id)
+            .maybeSingle();
+        if (!academia || academia.user_id !== user.id) {
+            return res.status(403).json({ error: 'Acesso negado ou academia não encontrada' });
+        }
+        const { nome, cnpj, endereco, telefone, instagram, descricao, foto_url } = req.body;
+        const { data: updated, error } = await supabase_1.default
+            .from('Academia')
+            .update({ nome, cnpj, endereco, telefone, instagram, descricao, foto_url })
+            .eq('id', id)
+            .select()
+            .single();
+        if (error)
+            throw error;
+        res.json(updated);
+    }
+    catch (error) {
+        logger_1.default.error(error, 'Erro interno ao atualizar academia');
+        res.status(500).json({ error: 'Erro interno ao atualizar academia' });
+    }
+});
+// Privada (Admin) - Verificação/Selo da academia
+router.post('/:id/verificar', auth_middleware_1.requireAuth, async (req, res) => {
+    try {
+        const auth_id = req.user?.sub;
+        const { id } = req.params;
+        const { data: user } = await supabase_1.default
+            .from('User')
+            .select('tipo')
+            .eq('auth_id', auth_id)
+            .maybeSingle();
+        if (!user || user.tipo !== 'ADMIN') {
+            return res.status(403).json({ error: 'Acesso negado: Requer privilégios de administrador' });
+        }
+        const { verificada, nivel_selo } = req.body;
+        const { data: academia } = await supabase_1.default
+            .from('Academia')
+            .select('verificada, nivel_selo')
+            .eq('id', String(id))
+            .maybeSingle();
+        if (!academia) {
+            return res.status(404).json({ error: 'Academia não encontrada' });
+        }
+        const { data: updated, error } = await supabase_1.default
+            .from('Academia')
+            .update({
+            verificada: typeof verificada === 'boolean' ? verificada : academia.verificada,
+            nivel_selo: nivel_selo || academia.nivel_selo,
+        })
+            .eq('id', String(id))
+            .select()
+            .single();
+        if (error)
+            throw error;
+        res.json({ message: 'Status de certificação da academia atualizado com sucesso', academia: updated });
+    }
+    catch (error) {
+        logger_1.default.error(error, 'Erro interno ao verificar academia pelo administrador');
+        res.status(500).json({ error: 'Erro interno ao verificar academia' });
     }
 });
 exports.default = router;

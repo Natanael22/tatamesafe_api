@@ -1,18 +1,40 @@
 import { Router } from 'express';
-import prisma from '../lib/prisma';
+import supabase from '../lib/supabase';
 import { requireAuth } from '../middlewares/auth.middleware';
 import logger from '../lib/logger';
 
 const router = Router();
 
+// Helper para buscar ou criar usuário local a partir do auth_id do token
+async function findOrCreateUser(auth_id: string, email?: string, tipo = 'ALUNO') {
+  const { data: existing } = await supabase
+    .from('User')
+    .select('*')
+    .eq('auth_id', auth_id)
+    .maybeSingle();
+
+  if (existing) return existing;
+
+  const { data: created, error } = await supabase
+    .from('User')
+    .insert({ auth_id, tipo, email: email || null })
+    .select()
+    .single();
+
+  if (error) throw error;
+  return created;
+}
+
 // Pública - Lista academias (ativas)
 router.get('/', async (req, res) => {
   try {
-    const academias = await prisma.academia.findMany({
-      where: { ativa: true },
-      select: { id: true, nome: true, endereco: true, nivel_selo: true, foto_url: true, verificada: true }
-    });
-    res.json(academias);
+    const { data, error } = await supabase
+      .from('Academia')
+      .select('id, nome, endereco, nivel_selo, foto_url, verificada')
+      .eq('ativa', true);
+
+    if (error) throw error;
+    res.json(data);
   } catch (error) {
     logger.error(error, 'Erro interno ao buscar academias');
     res.status(500).json({ error: 'Erro interno ao buscar academias' });
@@ -22,12 +44,15 @@ router.get('/', async (req, res) => {
 // Pública - Perfil da academia
 router.get('/:id', async (req, res) => {
   try {
-    const academia = await prisma.academia.findUnique({
-      where: { id: String(req.params.id) },
-      include: { certificados: true, avaliacoes: true }
-    });
-    if (!academia) return res.status(404).json({ error: 'Academia não encontrada' });
-    res.json(academia);
+    const { data, error } = await supabase
+      .from('Academia')
+      .select('*, certificados:Certificado(*), avaliacoes:Avaliacao(*)')
+      .eq('id', String(req.params.id))
+      .maybeSingle();
+
+    if (error) throw error;
+    if (!data) return res.status(404).json({ error: 'Academia não encontrada' });
+    res.json(data);
   } catch (error) {
     logger.error(error, 'Erro interno ao buscar academia específica');
     res.status(500).json({ error: 'Erro interno ao buscar academia' });
@@ -43,26 +68,22 @@ router.post('/', requireAuth, async (req, res) => {
     const { nome, cnpj, endereco, telefone, instagram, descricao, foto_url } = req.body;
     if (!nome) return res.status(400).json({ error: 'O nome da academia é obrigatório' });
 
-    // Buscar ou criar usuário local sincronizado com Supabase Auth
-    let user = await prisma.user.findUnique({ where: { auth_id } });
-    if (!user) {
-      user = await prisma.user.create({
-        data: {
-          auth_id,
-          tipo: 'ACADEMIA',
-          email: req.user?.email || null,
-        }
-      });
-    }
+    const user = await findOrCreateUser(auth_id, req.user?.email, 'ACADEMIA');
 
     // Verificar se já possui academia
-    const existing = await prisma.academia.findUnique({ where: { user_id: user.id } });
+    const { data: existing } = await supabase
+      .from('Academia')
+      .select('id')
+      .eq('user_id', user.id)
+      .maybeSingle();
+
     if (existing) {
       return res.status(400).json({ error: 'Usuário já possui uma academia cadastrada' });
     }
 
-    const academia = await prisma.academia.create({
-      data: {
+    const { data: academia, error } = await supabase
+      .from('Academia')
+      .insert({
         user_id: user.id,
         nome,
         cnpj,
@@ -72,9 +93,11 @@ router.post('/', requireAuth, async (req, res) => {
         descricao,
         foto_url,
         nivel_selo: 'NENHUM',
-      }
-    });
+      })
+      .select()
+      .single();
 
+    if (error) throw error;
     res.status(201).json(academia);
   } catch (error: any) {
     logger.error(error, 'Erro interno ao criar academia');
@@ -87,22 +110,35 @@ router.patch('/:id', requireAuth, async (req, res) => {
   try {
     const auth_id = req.user?.sub;
     const id = String(req.params.id);
-    
-    const user = await prisma.user.findUnique({ where: { auth_id } });
+
+    const { data: user } = await supabase
+      .from('User')
+      .select('id')
+      .eq('auth_id', auth_id)
+      .maybeSingle();
+
     if (!user) return res.status(401).json({ error: 'Usuário não encontrado' });
 
-    const academia = await prisma.academia.findUnique({ where: { id } });
+    const { data: academia } = await supabase
+      .from('Academia')
+      .select('user_id')
+      .eq('id', id)
+      .maybeSingle();
+
     if (!academia || academia.user_id !== user.id) {
       return res.status(403).json({ error: 'Acesso negado ou academia não encontrada' });
     }
 
     const { nome, cnpj, endereco, telefone, instagram, descricao, foto_url } = req.body;
 
-    const updated = await prisma.academia.update({
-      where: { id },
-      data: { nome, cnpj, endereco, telefone, instagram, descricao, foto_url }
-    });
+    const { data: updated, error } = await supabase
+      .from('Academia')
+      .update({ nome, cnpj, endereco, telefone, instagram, descricao, foto_url })
+      .eq('id', id)
+      .select()
+      .single();
 
+    if (error) throw error;
     res.json(updated);
   } catch (error) {
     logger.error(error, 'Erro interno ao atualizar academia');
@@ -115,28 +151,40 @@ router.post('/:id/verificar', requireAuth, async (req, res) => {
   try {
     const auth_id = req.user?.sub;
     const { id } = req.params;
-    
-    // Validar se o usuário que faz a requisição é ADMIN
-    const user = await prisma.user.findUnique({ where: { auth_id } });
+
+    const { data: user } = await supabase
+      .from('User')
+      .select('tipo')
+      .eq('auth_id', auth_id)
+      .maybeSingle();
+
     if (!user || user.tipo !== 'ADMIN') {
       return res.status(403).json({ error: 'Acesso negado: Requer privilégios de administrador' });
     }
 
     const { verificada, nivel_selo } = req.body;
 
-    const academia = await prisma.academia.findUnique({ where: { id: String(id) } });
+    const { data: academia } = await supabase
+      .from('Academia')
+      .select('verificada, nivel_selo')
+      .eq('id', String(id))
+      .maybeSingle();
+
     if (!academia) {
       return res.status(404).json({ error: 'Academia não encontrada' });
     }
 
-    const updated = await prisma.academia.update({
-      where: { id: String(id) },
-      data: {
+    const { data: updated, error } = await supabase
+      .from('Academia')
+      .update({
         verificada: typeof verificada === 'boolean' ? verificada : academia.verificada,
-        nivel_selo: nivel_selo || academia.nivel_selo
-      }
-    });
+        nivel_selo: nivel_selo || academia.nivel_selo,
+      })
+      .eq('id', String(id))
+      .select()
+      .single();
 
+    if (error) throw error;
     res.json({ message: 'Status de certificação da academia atualizado com sucesso', academia: updated });
   } catch (error) {
     logger.error(error, 'Erro interno ao verificar academia pelo administrador');

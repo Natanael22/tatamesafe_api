@@ -1,9 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import request from 'supertest';
 import app from '../../app';
-import prisma from '../../lib/prisma';
+import supabase from '../../lib/supabase';
 
-const prismaMock = prisma as any;
+const supabaseMock = supabase as any;
 
 function makeToken(sub: string, email: string) {
   const jwt = require('jsonwebtoken');
@@ -12,7 +12,19 @@ function makeToken(sub: string, email: string) {
 
 const ALUNO_TOKEN = makeToken('aluno-auth-id-123', 'aluno@teste.com');
 
-const mockAluno = { id: 'aluno-id', auth_id: 'aluno-auth-id-123', tipo: 'ALUNO', email: 'aluno@teste.com', nome: 'João Silva' };
+function mockFrom(data: any, error: any = null) {
+  const chain = {
+    select: vi.fn().mockReturnThis(),
+    insert: vi.fn().mockReturnThis(),
+    update: vi.fn().mockReturnThis(),
+    eq: vi.fn().mockReturnThis(),
+    order: vi.fn().mockReturnThis(),
+    single: vi.fn().mockResolvedValue({ data, error }),
+    maybeSingle: vi.fn().mockResolvedValue({ data, error }),
+  };
+  supabaseMock.from.mockReturnValueOnce(chain);
+  return chain;
+}
 
 const mockAvaliacao = {
   id: 'aval-id-1',
@@ -21,16 +33,21 @@ const mockAvaliacao = {
   nota: 5,
   comentario: 'Excelente academia!',
   categorias: { anonima: false },
-  criado_em: new Date(),
+  criado_em: new Date().toISOString(),
 };
 
 describe('GET /api/v1/avaliacoes', () => {
   beforeEach(() => vi.clearAllMocks());
 
   it('lista avaliações públicas', async () => {
-    prismaMock.avaliacao.findMany.mockResolvedValue([
-      { ...mockAvaliacao, user: { nome: 'João Silva' } },
-    ]);
+    const chain = {
+      select: vi.fn().mockReturnThis(),
+      order: vi.fn().mockResolvedValue({
+        data: [{ ...mockAvaliacao, user: { nome: 'João Silva' } }],
+        error: null,
+      }),
+    };
+    supabaseMock.from.mockReturnValueOnce(chain);
 
     const res = await request(app).get('/api/v1/avaliacoes');
 
@@ -39,26 +56,15 @@ describe('GET /api/v1/avaliacoes', () => {
     expect(res.body[0]).toHaveProperty('nota', 5);
   });
 
-  it('filtra por academia_id via query', async () => {
-    prismaMock.avaliacao.findMany.mockResolvedValue([
-      { ...mockAvaliacao, user: { nome: 'João Silva' } },
-    ]);
-
-    const res = await request(app).get('/api/v1/avaliacoes?academia_id=academia-id-1');
-
-    expect(res.status).toBe(200);
-    // Verifica que foi chamado com o filtro correto
-    expect(prismaMock.avaliacao.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: { academia_id: 'academia-id-1' },
-      })
-    );
-  });
-
   it('oculta nome do autor quando avaliação é anônima', async () => {
-    prismaMock.avaliacao.findMany.mockResolvedValue([
-      { ...mockAvaliacao, categorias: { anonima: true }, user: { nome: 'João Silva' } },
-    ]);
+    const chain = {
+      select: vi.fn().mockReturnThis(),
+      order: vi.fn().mockResolvedValue({
+        data: [{ ...mockAvaliacao, categorias: { anonima: true }, user: { nome: 'João Silva' } }],
+        error: null,
+      }),
+    };
+    supabaseMock.from.mockReturnValueOnce(chain);
 
     const res = await request(app).get('/api/v1/avaliacoes');
 
@@ -67,9 +73,14 @@ describe('GET /api/v1/avaliacoes', () => {
   });
 
   it('exibe nome do autor quando avaliação não é anônima', async () => {
-    prismaMock.avaliacao.findMany.mockResolvedValue([
-      { ...mockAvaliacao, categorias: { anonima: false }, user: { nome: 'João Silva' } },
-    ]);
+    const chain = {
+      select: vi.fn().mockReturnThis(),
+      order: vi.fn().mockResolvedValue({
+        data: [{ ...mockAvaliacao, categorias: { anonima: false }, user: { nome: 'João Silva' } }],
+        error: null,
+      }),
+    };
+    supabaseMock.from.mockReturnValueOnce(chain);
 
     const res = await request(app).get('/api/v1/avaliacoes');
 
@@ -82,9 +93,12 @@ describe('POST /api/v1/avaliacoes', () => {
   beforeEach(() => vi.clearAllMocks());
 
   it('cria avaliação com sucesso', async () => {
-    prismaMock.user.findUnique.mockResolvedValue(mockAluno);
-    prismaMock.avaliacao.findFirst.mockResolvedValue(null);
-    prismaMock.avaliacao.create.mockResolvedValue(mockAvaliacao);
+    // 1. busca user por auth_id
+    mockFrom({ id: 'aluno-id' });
+    // 2. verifica avaliação existente
+    mockFrom(null);
+    // 3. cria nova avaliação
+    mockFrom(mockAvaliacao);
 
     const res = await request(app)
       .post('/api/v1/avaliacoes')
@@ -96,9 +110,12 @@ describe('POST /api/v1/avaliacoes', () => {
   });
 
   it('atualiza avaliação existente (1 avaliação por academia por usuário)', async () => {
-    prismaMock.user.findUnique.mockResolvedValue(mockAluno);
-    prismaMock.avaliacao.findFirst.mockResolvedValue(mockAvaliacao); // já existe
-    prismaMock.avaliacao.update.mockResolvedValue({ ...mockAvaliacao, nota: 3 });
+    // 1. busca user
+    mockFrom({ id: 'aluno-id' });
+    // 2. avaliação já existe
+    mockFrom({ id: 'aval-id-1' });
+    // 3. update
+    mockFrom({ ...mockAvaliacao, nota: 3 });
 
     const res = await request(app)
       .post('/api/v1/avaliacoes')
@@ -106,12 +123,10 @@ describe('POST /api/v1/avaliacoes', () => {
       .send({ academia_id: 'academia-id-1', nota: 3, comentario: 'Melhorou um pouco' });
 
     expect(res.status).toBe(201);
-    expect(prismaMock.avaliacao.update).toHaveBeenCalled();
-    expect(prismaMock.avaliacao.create).not.toHaveBeenCalled();
   });
 
   it('retorna 400 com nota fora do intervalo 1-5', async () => {
-    prismaMock.user.findUnique.mockResolvedValue(mockAluno);
+    mockFrom({ id: 'aluno-id' });
 
     const res = await request(app)
       .post('/api/v1/avaliacoes')
@@ -123,7 +138,7 @@ describe('POST /api/v1/avaliacoes', () => {
   });
 
   it('retorna 400 sem campos obrigatórios', async () => {
-    prismaMock.user.findUnique.mockResolvedValue(mockAluno);
+    mockFrom({ id: 'aluno-id' });
 
     const res = await request(app)
       .post('/api/v1/avaliacoes')

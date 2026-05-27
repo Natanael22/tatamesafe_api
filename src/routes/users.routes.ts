@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import prisma from '../lib/prisma';
+import supabase from '../lib/supabase';
 import { requireAuth } from '../middlewares/auth.middleware';
 import logger from '../lib/logger';
 
@@ -11,25 +11,26 @@ router.get('/me', requireAuth, async (req, res) => {
     const auth_id = req.user?.sub;
     if (!auth_id) return res.status(400).json({ error: 'Token inválido' });
 
-    let user = await prisma.user.findUnique({ 
-      where: { auth_id },
-      include: {
-        academia: true // Traz os dados da academia associada se houver
-      }
-    });
+    let { data: user } = await supabase
+      .from('User')
+      .select('*, academia:Academia(*)')
+      .eq('auth_id', auth_id)
+      .maybeSingle();
 
     // Se o usuário não existir na nossa base local, criamos automaticamente
     if (!user) {
-      user = await prisma.user.create({
-        data: {
+      const { data: created, error } = await supabase
+        .from('User')
+        .insert({
           auth_id,
-          tipo: 'ALUNO', // Tipo padrão inicial
+          tipo: 'ALUNO',
           email: req.user?.email || null,
-        },
-        include: {
-          academia: true
-        }
-      });
+        })
+        .select('*, academia:Academia(*)')
+        .single();
+
+      if (error) throw error;
+      user = created;
     }
 
     res.json(user);
@@ -43,8 +44,13 @@ router.get('/me', requireAuth, async (req, res) => {
 router.patch('/me', requireAuth, async (req, res) => {
   try {
     const auth_id = req.user?.sub;
-    
-    const user = await prisma.user.findUnique({ where: { auth_id } });
+
+    const { data: user } = await supabase
+      .from('User')
+      .select('id')
+      .eq('auth_id', auth_id)
+      .maybeSingle();
+
     if (!user) {
       return res.status(404).json({ error: 'Usuário não encontrado' });
     }
@@ -52,15 +58,14 @@ router.patch('/me', requireAuth, async (req, res) => {
     const { nome, telefone, tipo } = req.body;
 
     // Apenas atualiza campos permitidos (não deixa mudar id, auth_id, email, etc.)
-    const updated = await prisma.user.update({
-      where: { id: user.id },
-      data: {
-        nome,
-        telefone,
-        tipo // opcional, dependendo da regra de negócio pode ser restrito
-      }
-    });
+    const { data: updated, error } = await supabase
+      .from('User')
+      .update({ nome, telefone, tipo })
+      .eq('id', user.id)
+      .select()
+      .single();
 
+    if (error) throw error;
     res.json(updated);
   } catch (error) {
     logger.error(error, 'Erro interno ao atualizar perfil do usuário');

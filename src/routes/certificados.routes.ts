@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import prisma from '../lib/prisma';
+import supabase from '../lib/supabase';
 import { requireAuth } from '../middlewares/auth.middleware';
 import logger from '../lib/logger';
 
@@ -9,20 +9,19 @@ const router = Router();
 router.get('/', async (req, res) => {
   try {
     const { academia_id } = req.query;
-    
-    const whereClause = academia_id ? { academia_id: String(academia_id) } : {};
 
-    const certificados = await prisma.certificado.findMany({
-      where: whereClause,
-      include: {
-        academia: {
-          select: { nome: true }
-        }
-      },
-      orderBy: { emitido_em: 'desc' }
-    });
+    let query = supabase
+      .from('Certificado')
+      .select('*, academia:Academia(nome)')
+      .order('emitido_em', { ascending: false });
 
-    res.json(certificados);
+    if (academia_id) {
+      query = query.eq('academia_id', String(academia_id));
+    }
+
+    const { data, error } = await query;
+    if (error) throw error;
+    res.json(data);
   } catch (error) {
     logger.error(error, 'Erro interno ao buscar certificados');
     res.status(500).json({ error: 'Erro interno ao buscar certificados' });
@@ -32,20 +31,15 @@ router.get('/', async (req, res) => {
 // Pública - Validação/Consulta de um certificado específico
 router.get('/:id', async (req, res) => {
   try {
-    const certificado = await prisma.certificado.findUnique({
-      where: { id: String(req.params.id) },
-      include: {
-        academia: {
-          select: { nome: true, cnpj: true }
-        }
-      }
-    });
+    const { data, error } = await supabase
+      .from('Certificado')
+      .select('*, academia:Academia(nome, cnpj)')
+      .eq('id', String(req.params.id))
+      .maybeSingle();
 
-    if (!certificado) {
-      return res.status(404).json({ error: 'Certificado não encontrado' });
-    }
-
-    res.json(certificado);
+    if (error) throw error;
+    if (!data) return res.status(404).json({ error: 'Certificado não encontrado' });
+    res.json(data);
   } catch (error) {
     logger.error(error, 'Erro interno ao consultar certificado específico');
     res.status(500).json({ error: 'Erro interno ao consultar certificado' });
@@ -56,9 +50,13 @@ router.get('/:id', async (req, res) => {
 router.post('/', requireAuth, async (req, res) => {
   try {
     const auth_id = req.user?.sub;
-    
-    // Apenas ADMIN pode emitir certificados oficiais
-    const user = await prisma.user.findUnique({ where: { auth_id } });
+
+    const { data: user } = await supabase
+      .from('User')
+      .select('tipo')
+      .eq('auth_id', auth_id)
+      .maybeSingle();
+
     if (!user || user.tipo !== 'ADMIN') {
       return res.status(403).json({ error: 'Acesso negado: Requer privilégios de administrador' });
     }
@@ -69,22 +67,29 @@ router.post('/', requireAuth, async (req, res) => {
       return res.status(400).json({ error: 'Campos obrigatórios: academia_id, tipo, instrutor, validade_em' });
     }
 
-    // Verificar se a academia existe
-    const academia = await prisma.academia.findUnique({ where: { id: String(academia_id) } });
+    const { data: academia } = await supabase
+      .from('Academia')
+      .select('id')
+      .eq('id', String(academia_id))
+      .maybeSingle();
+
     if (!academia) {
       return res.status(404).json({ error: 'Academia não encontrada' });
     }
 
-    const certificado = await prisma.certificado.create({
-      data: {
+    const { data: certificado, error } = await supabase
+      .from('Certificado')
+      .insert({
         academia_id: String(academia_id),
         tipo,
         instrutor,
-        validade_em: new Date(validade_em),
-        url_pdf
-      }
-    });
+        validade_em: new Date(validade_em).toISOString(),
+        url_pdf,
+      })
+      .select()
+      .single();
 
+    if (error) throw error;
     res.status(201).json(certificado);
   } catch (error: any) {
     logger.error(error, 'Erro ao emitir novo certificado');

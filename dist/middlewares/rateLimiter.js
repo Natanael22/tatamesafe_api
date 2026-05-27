@@ -18,11 +18,14 @@ exports.denunciaLimiter = (0, express_rate_limit_1.rateLimit)({
     store: new rate_limit_redis_1.RedisStore({
         sendCommand: (...args) => redisClient.call(args[0], ...args.slice(1)),
     }),
-    keyGenerator: (req) => {
-        const forwarded = req.headers['x-forwarded-for'];
-        const ip = Array.isArray(forwarded) ? forwarded[0] : forwarded || req.ip || 'unknown';
+    keyGenerator: (req, res) => {
+        const rawIp = req.ip || req.headers['x-forwarded-for']?.toString() || 'unknown';
+        const ip = (0, express_rate_limit_1.ipKeyGenerator)(rawIp);
         // Hash IP to avoid storing PII in redis
         return (0, crypto_1.createHash)('sha256').update(ip + RATE_LIMIT_SALT).digest('hex');
+    },
+    validate: {
+        xForwardedForHeader: false,
     },
     skip: (req) => req.body?.urgencia === 'CRITICA', // Don't block emergencies
 });
