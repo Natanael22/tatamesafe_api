@@ -1,23 +1,33 @@
 import { Router } from 'express';
 import { Queue } from 'bullmq';
 import Redis from 'ioredis';
+import multer from 'multer';
 import supabase from '../lib/supabase';
 import { supabaseVault } from '../lib/supabase';
 import { denunciaLimiter } from '../middlewares/rateLimiter';
 import { requireAuth } from '../middlewares/auth.middleware';
+import { StorageService } from '../lib/storage';
 import logger from '../lib/logger';
 
 const router = Router();
 const connection = new Redis(process.env.REDIS_URL || 'redis://localhost:6379');
 const denunciaQueue = new Queue('denuncia-queue', { connection });
 
-// Pública (com rate limit) - Registrar denúncia anônima
-router.post('/', denunciaLimiter, async (req, res) => {
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 }, // Limite de 10MB
+});
+
+// Pública (com rate limit) - Registrar denúncia anônima (com anexo de evidência opcional)
+router.post('/', upload.single('evidencia'), denunciaLimiter, async (req, res) => {
   try {
     const { tipo, descricao_enc, academia_ref, urgencia, envolve_menor } = req.body;
 
+    if (!tipo || !descricao_enc) {
+      return res.status(400).json({ error: 'Campos obrigatórios: tipo, descricao_enc' });
+    }
+
     // Chama a função SECURITY DEFINER via supabase.rpc() (schema tatame, mas a função acessa tatame_vault)
-    // O parâmetro descricao_enc chega como base64 e a função espera BYTEA — passamos a string base64 decodificada
     const bufferDesc = Buffer.from(descricao_enc, 'base64');
 
     const { data, error } = await supabase.rpc('inserir_denuncia', {
@@ -25,7 +35,7 @@ router.post('/', denunciaLimiter, async (req, res) => {
       p_descricao_enc: bufferDesc.toString('hex'), // PostgreSQL aceita hex para BYTEA via RPC
       p_academia_ref: academia_ref || null,
       p_urgencia: urgencia || 'MEDIA',
-      p_envolve_menor: envolve_menor || false,
+      p_envolve_menor: envolve_menor === 'true' || envolve_menor === true,
     });
 
     if (error) throw error;
@@ -33,11 +43,48 @@ router.post('/', denunciaLimiter, async (req, res) => {
     const protocolo = data as string;
     if (!protocolo) throw new Error('Falha ao gerar protocolo');
 
+    // Se houver arquivo de evidência, faz o upload para o Supabase Storage
+    if (req.file) {
+      const file = req.file;
+      
+      // Busca o ID da denúncia recém-criada
+      const { data: denuncia, error: findError } = await supabaseVault
+        .from('Denuncia')
+        .select('id')
+        .eq('protocolo', protocolo)
+        .single();
+
+      if (findError || !denuncia) {
+        logger.error(findError, `Erro ao buscar ID da denúncia para anexar evidência (${protocolo})`);
+      } else {
+        const fileExt = file.originalname.split('.').pop() || '';
+        const filePath = `${denuncia.id}/${Date.now()}_evidencia.${fileExt}`;
+
+        // Faz upload para o bucket privado 'denuncias'
+        await StorageService.uploadFile('denuncias', filePath, file.buffer, file.mimetype);
+
+        // Insere na tabela de evidências
+        const sizeKb = Math.round(file.size / 1024);
+        const { error: evidenceError } = await supabaseVault
+          .from('DenunciaEvidencia')
+          .insert({
+            denuncia_id: denuncia.id,
+            s3_key: filePath,
+            tipo_mime: file.mimetype,
+            tamanho_kb: sizeKb,
+          });
+
+        if (evidenceError) {
+          logger.error(evidenceError, `Erro ao registrar evidência no banco para denúncia ${denuncia.id}`);
+        }
+      }
+    }
+
     // Adiciona job na fila BullMQ
     await denunciaQueue.add('denuncia.nova', {
       protocolo,
-      urgencia,
-      envolve_menor,
+      urgencia: urgencia || 'MEDIA',
+      envolve_menor: envolve_menor === 'true' || envolve_menor === true,
     });
 
     res.status(201).json({ protocolo });
@@ -64,11 +111,30 @@ router.get('/admin', requireAuth, async (req, res) => {
 
     const { data: denuncias, error } = await supabaseVault
       .from('Denuncia')
-      .select('*, historico:DenunciaHistorico(*)')
+      .select('*, historico:DenunciaHistorico(*), evidencias:DenunciaEvidencia(*)')
       .order('criado_em', { ascending: false });
 
     if (error) throw error;
-    res.json(denuncias);
+
+    // Para cada evidência de cada denúncia, gera uma URL assinada (válida por 15 minutos)
+    const denunciasComUrls = await Promise.all(
+      (denuncias || []).map(async (denuncia: any) => {
+        const evidenciasComSignedUrls = await Promise.all(
+          (denuncia.evidencias || []).map(async (ev: any) => {
+            try {
+              const url = await StorageService.createSignedUrl('denuncias', ev.s3_key);
+              return { ...ev, url };
+            } catch (err) {
+              logger.error(err, `Erro ao gerar URL assinada para a evidência ${ev.id}`);
+              return { ...ev, url: null };
+            }
+          })
+        );
+        return { ...denuncia, evidencias: evidenciasComSignedUrls };
+      })
+    );
+
+    res.json(denunciasComUrls);
   } catch (error) {
     logger.error(error, 'Erro interno ao listar denúncias');
     res.status(500).json({ error: 'Erro interno ao listar denúncias' });

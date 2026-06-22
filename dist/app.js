@@ -15,6 +15,7 @@ const avaliacoes_routes_1 = __importDefault(require("./routes/avaliacoes.routes"
 const certificados_routes_1 = __importDefault(require("./routes/certificados.routes"));
 const crypto_routes_1 = __importDefault(require("./routes/crypto.routes"));
 const users_routes_1 = __importDefault(require("./routes/users.routes"));
+const auth_routes_1 = __importDefault(require("./routes/auth.routes"));
 const swagger_ui_express_1 = __importDefault(require("swagger-ui-express"));
 const yamljs_1 = __importDefault(require("yamljs"));
 const path_1 = __importDefault(require("path"));
@@ -26,7 +27,25 @@ const swaggerDocument = yamljs_1.default.load(path_1.default.resolve(process.cwd
 app.use('/api-docs', swagger_ui_express_1.default.serve, swagger_ui_express_1.default.setup(swaggerDocument));
 // Middlewares Globais
 app.use((0, helmet_1.default)());
-app.use((0, cors_1.default)({ origin: process.env.CORS_ORIGIN || '*' }));
+const allowedOrigins = process.env.CORS_ORIGIN
+    ? process.env.CORS_ORIGIN.split(',').map((o) => o.trim())
+    : ['*'];
+app.use((0, cors_1.default)({
+    origin: (origin, callback) => {
+        // Permitir requisições sem origem (como aplicativos móveis, curl, etc.)
+        if (!origin)
+            return callback(null, true);
+        if (allowedOrigins.includes('*') || allowedOrigins.includes(origin)) {
+            return callback(null, true);
+        }
+        // Em ambiente de desenvolvimento, permitir qualquer porta no localhost
+        const isDev = process.env.NODE_ENV?.trim() === 'development';
+        if (isDev && (origin.startsWith('http://localhost:') || origin.startsWith('http://127.0.0.1:'))) {
+            return callback(null, true);
+        }
+        callback(new Error('Bloqueado por CORS'));
+    },
+}));
 app.use(express_1.default.json());
 const isDev = process.env.NODE_ENV?.trim() === 'development';
 // Logger HTTP sem dados sensíveis
@@ -53,6 +72,7 @@ app.use('/api/v1/avaliacoes', avaliacoes_routes_1.default);
 app.use('/api/v1/certificados', certificados_routes_1.default);
 app.use('/api/v1/crypto', crypto_routes_1.default);
 app.use('/api/v1/users', users_routes_1.default);
+app.use('/api/v1/auth', auth_routes_1.default);
 // Health Check
 app.get('/health', (req, res) => {
     res.status(200).json({ status: 'OK' });

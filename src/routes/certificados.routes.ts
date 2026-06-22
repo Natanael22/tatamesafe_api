@@ -1,9 +1,16 @@
 import { Router } from 'express';
+import multer from 'multer';
 import supabase from '../lib/supabase';
 import { requireAuth } from '../middlewares/auth.middleware';
+import { StorageService } from '../lib/storage';
 import logger from '../lib/logger';
 
 const router = Router();
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 }, // Limite de 10MB para PDFs
+});
 
 // Pública - Listar certificados (opcionalmente filtrado por academia)
 router.get('/', async (req, res) => {
@@ -46,8 +53,8 @@ router.get('/:id', async (req, res) => {
   }
 });
 
-// Privada (Admin) - Emissão de novo certificado
-router.post('/', requireAuth, async (req, res) => {
+// Privada (Admin) - Emissão de novo certificado (com upload opcional de PDF)
+router.post('/', upload.single('pdf'), requireAuth, async (req, res) => {
   try {
     const auth_id = req.user?.sub;
 
@@ -77,6 +84,16 @@ router.post('/', requireAuth, async (req, res) => {
       return res.status(404).json({ error: 'Academia não encontrada' });
     }
 
+    // Fazer upload do PDF para o bucket público 'certificados'
+    let finalUrlPdf = url_pdf || null;
+    if (req.file) {
+      const file = req.file;
+      const fileExt = file.originalname.split('.').pop() || '';
+      const filePath = `${academia_id}/${Date.now()}_certificado.${fileExt}`;
+      await StorageService.uploadFile('certificados', filePath, file.buffer, file.mimetype);
+      finalUrlPdf = StorageService.getPublicUrl('certificados', filePath);
+    }
+
     const { data: certificado, error } = await supabase
       .from('Certificado')
       .insert({
@@ -84,7 +101,7 @@ router.post('/', requireAuth, async (req, res) => {
         tipo,
         instrutor,
         validade_em: new Date(validade_em).toISOString(),
-        url_pdf,
+        url_pdf: finalUrlPdf,
       })
       .select()
       .single();

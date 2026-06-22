@@ -51,11 +51,29 @@ function createSupabaseQueryMock() {
   return builder;
 }
 
-// Mock do Supabase — cria um from() encadeável com vi.fn()
+// Mock do Supabase — cria um from(), rpc(), auth e storage encadeáveis com vi.fn()
 function createSupabaseMock() {
   return {
     from: vi.fn().mockImplementation(() => createSupabaseQueryMock()),
     rpc: vi.fn().mockResolvedValue({ data: null, error: null }),
+    auth: {
+      signUp: vi.fn().mockResolvedValue({ data: { user: { id: 'mock-auth-id' }, session: { access_token: 'mock-token' } }, error: null }),
+      signInWithPassword: vi.fn().mockResolvedValue({ data: { session: { access_token: 'mock-token' }, user: { id: 'mock-auth-id' } }, error: null }),
+      signOut: vi.fn().mockResolvedValue({ error: null }),
+      admin: {
+        signOut: vi.fn().mockResolvedValue({ error: null }),
+        deleteUser: vi.fn().mockResolvedValue({ error: null }),
+      },
+    },
+    storage: {
+      from: vi.fn().mockReturnValue({
+        upload: vi.fn().mockResolvedValue({ data: { path: 'mock-path' }, error: null }),
+        getPublicUrl: vi.fn().mockReturnValue({ data: { publicUrl: 'http://mock-public-url' } }),
+        createSignedUrl: vi.fn().mockResolvedValue({ data: { signedUrl: 'http://mock-signed-url' }, error: null }),
+      }),
+      getBucket: vi.fn().mockResolvedValue({ data: { name: 'mock-bucket' }, error: null }),
+      createBucket: vi.fn().mockResolvedValue({ data: {}, error: null }),
+    },
   };
 }
 

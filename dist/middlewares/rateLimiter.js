@@ -12,7 +12,7 @@ const redisClient = new ioredis_1.default(process.env.REDIS_URL || 'redis://loca
 const RATE_LIMIT_SALT = process.env.RATE_LIMIT_SALT || 'default-salt';
 exports.denunciaLimiter = (0, express_rate_limit_1.rateLimit)({
     windowMs: 60 * 60 * 1000, // 1 hour
-    max: 3, // limit each IP to 3 requests per windowMs
+    max: 50, // limit each IP to 3 requests per windowMs
     standardHeaders: true,
     legacyHeaders: false,
     store: new rate_limit_redis_1.RedisStore({

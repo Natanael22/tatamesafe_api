@@ -1,9 +1,16 @@
 import { Router } from 'express';
+import multer from 'multer';
 import supabase from '../lib/supabase';
 import { requireAuth } from '../middlewares/auth.middleware';
+import { StorageService } from '../lib/storage';
 import logger from '../lib/logger';
 
 const router = Router();
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 }, // Limite de 5MB para fotos
+});
 
 // Helper para buscar ou criar usuário local a partir do auth_id do token
 async function findOrCreateUser(auth_id: string, email?: string, tipo = 'ALUNO') {
@@ -59,8 +66,8 @@ router.get('/:id', async (req, res) => {
   }
 });
 
-// Privada (Academia) - Cadastro
-router.post('/', requireAuth, async (req, res) => {
+// Privada (Academia) - Cadastro (com upload opcional de foto de perfil)
+router.post('/', upload.single('foto'), requireAuth, async (req, res) => {
   try {
     const auth_id = req.user?.sub;
     if (!auth_id) return res.status(400).json({ error: 'Token inválido: sub ausente' });
@@ -81,17 +88,39 @@ router.post('/', requireAuth, async (req, res) => {
       return res.status(400).json({ error: 'Usuário já possui uma academia cadastrada' });
     }
 
+    // Processar endereço se vier como string (comum em formulários multipart/form-data)
+    let parsedEndereco = {};
+    if (typeof endereco === 'string') {
+      try {
+        parsedEndereco = JSON.parse(endereco);
+      } catch {
+        parsedEndereco = {};
+      }
+    } else if (endereco) {
+      parsedEndereco = endereco;
+    }
+
+    // Upload da foto de perfil para o bucket público 'academias'
+    let finalFotoUrl = foto_url || null;
+    if (req.file) {
+      const file = req.file;
+      const fileExt = file.originalname.split('.').pop() || '';
+      const filePath = `${user.id}/${Date.now()}_profile.${fileExt}`;
+      await StorageService.uploadFile('academias', filePath, file.buffer, file.mimetype);
+      finalFotoUrl = StorageService.getPublicUrl('academias', filePath);
+    }
+
     const { data: academia, error } = await supabase
       .from('Academia')
       .insert({
         user_id: user.id,
         nome,
-        cnpj,
-        endereco: endereco || {},
-        telefone,
-        instagram,
-        descricao,
-        foto_url,
+        cnpj: cnpj || null,
+        endereco: parsedEndereco,
+        telefone: telefone || null,
+        instagram: instagram || null,
+        descricao: descricao || null,
+        foto_url: finalFotoUrl,
         nivel_selo: 'NENHUM',
       })
       .select()
@@ -105,8 +134,8 @@ router.post('/', requireAuth, async (req, res) => {
   }
 });
 
-// Privada (Academia) - Atualização
-router.patch('/:id', requireAuth, async (req, res) => {
+// Privada (Academia) - Atualização (com upload opcional de foto de perfil)
+router.patch('/:id', upload.single('foto'), requireAuth, async (req, res) => {
   try {
     const auth_id = req.user?.sub;
     const id = String(req.params.id);
@@ -121,7 +150,7 @@ router.patch('/:id', requireAuth, async (req, res) => {
 
     const { data: academia } = await supabase
       .from('Academia')
-      .select('user_id')
+      .select('user_id, foto_url')
       .eq('id', id)
       .maybeSingle();
 
@@ -131,9 +160,40 @@ router.patch('/:id', requireAuth, async (req, res) => {
 
     const { nome, cnpj, endereco, telefone, instagram, descricao, foto_url } = req.body;
 
+    let parsedEndereco = undefined;
+    if (endereco !== undefined) {
+      if (typeof endereco === 'string') {
+        try {
+          parsedEndereco = JSON.parse(endereco);
+        } catch {
+          parsedEndereco = {};
+        }
+      } else {
+        parsedEndereco = endereco;
+      }
+    }
+
+    // Upload de nova foto de perfil
+    let finalFotoUrl = foto_url !== undefined ? foto_url : academia.foto_url;
+    if (req.file) {
+      const file = req.file;
+      const fileExt = file.originalname.split('.').pop() || '';
+      const filePath = `${user.id}/${Date.now()}_profile.${fileExt}`;
+      await StorageService.uploadFile('academias', filePath, file.buffer, file.mimetype);
+      finalFotoUrl = StorageService.getPublicUrl('academias', filePath);
+    }
+
     const { data: updated, error } = await supabase
       .from('Academia')
-      .update({ nome, cnpj, endereco, telefone, instagram, descricao, foto_url })
+      .update({
+        nome,
+        cnpj,
+        endereco: parsedEndereco,
+        telefone,
+        instagram,
+        descricao,
+        foto_url: finalFotoUrl,
+      })
       .eq('id', id)
       .select()
       .single();

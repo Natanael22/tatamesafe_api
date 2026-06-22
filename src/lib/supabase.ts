@@ -1,3 +1,8 @@
+if (process.env.NODE_ENV === 'development') {
+  // Desabilita a verificação de SSL localmente para evitar erros de certificado auto-assinado (ex: UNABLE_TO_GET_ISSUER_CERT_LOCALLY)
+  process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+}
+
 import { createClient } from '@supabase/supabase-js';
 
 const supabaseUrl = process.env.SUPABASE_URL!;
