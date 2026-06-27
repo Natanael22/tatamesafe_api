@@ -6,6 +6,9 @@ export type CursoTipo = 'PROTECAO_MENORES' | 'PREVENCAO_ASSEDIO' | 'INCLUSAO' | 
 export type DenunciaTipo = 'ASSEDIO_SEXUAL' | 'ASSEDIO_MORAL' | 'VIOLENCIA' | 'OUTRO';
 export type DenunciaStatus = 'RECEBIDA' | 'TRIAGEM' | 'EM_APURACAO' | 'ENCERRADA';
 export type Urgencia = 'BAIXA' | 'MEDIA' | 'ALTA' | 'CRITICA';
+export type Atividade = 'JIU_JITSU' | 'MUAY_THAI' | 'BOXE' | 'FUNCIONAL';
+
+export const ATIVIDADES_VALIDAS: Atividade[] = ['JIU_JITSU', 'MUAY_THAI', 'BOXE', 'FUNCIONAL'];
 
 export interface User {
   id: string;
@@ -28,6 +31,7 @@ export interface Academia {
   instagram?: string | null;
   descricao?: string | null;
   foto_url?: string | null;
+  atividades: Atividade[];
   nivel_selo: SeloNivel;
   verificada: boolean;
   ativa: boolean;

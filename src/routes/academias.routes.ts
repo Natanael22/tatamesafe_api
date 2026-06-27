@@ -3,6 +3,8 @@ import multer from 'multer';
 import supabase from '../lib/supabase';
 import { requireAuth } from '../middlewares/auth.middleware';
 import { StorageService } from '../lib/storage';
+import { fetchEnderecoByCep } from '../lib/viacep';
+import { ATIVIDADES_VALIDAS, type Atividade } from '../types/database.types';
 import logger from '../lib/logger';
 
 const router = Router();
@@ -12,7 +14,38 @@ const upload = multer({
   limits: { fileSize: 5 * 1024 * 1024 }, // Limite de 5MB para fotos
 });
 
-// Helper para buscar ou criar usuário local a partir do auth_id do token
+// ---------------------------------------------------------------------------
+// Auxiliar: valida e normaliza array de atividades
+// ---------------------------------------------------------------------------
+function parseAtividades(raw: unknown): Atividade[] {
+  if (!raw) return [];
+
+  let lista: string[] = [];
+
+  if (typeof raw === 'string') {
+    try {
+      // Tenta como JSON array: '["JIU_JITSU","BOXE"]'
+      const parsed = JSON.parse(raw);
+      lista = Array.isArray(parsed) ? parsed : [raw];
+    } catch {
+      // Tenta como string separada por vírgula: "JIU_JITSU,BOXE"
+      lista = raw.split(',').map((s) => s.trim());
+    }
+  } else if (Array.isArray(raw)) {
+    lista = raw.map(String);
+  }
+
+  const invalidas = lista.filter((a) => !ATIVIDADES_VALIDAS.includes(a as Atividade));
+  if (invalidas.length > 0) {
+    throw new Error(`Atividades inválidas: ${invalidas.join(', ')}. Permitidas: ${ATIVIDADES_VALIDAS.join(', ')}`);
+  }
+
+  return lista as Atividade[];
+}
+
+// ---------------------------------------------------------------------------
+// Auxiliar: busca ou cria usuário local a partir do auth_id do token
+// ---------------------------------------------------------------------------
 async function findOrCreateUser(auth_id: string, email?: string, tipo = 'ALUNO') {
   const { data: existing } = await supabase
     .from('User')
@@ -32,12 +65,30 @@ async function findOrCreateUser(auth_id: string, email?: string, tipo = 'ALUNO')
   return created;
 }
 
-// Pública - Lista academias (ativas)
+// ---------------------------------------------------------------------------
+// Pública — Consulta de endereço por CEP (ViaCEP)
+// GET /academias/cep/:cep
+// ---------------------------------------------------------------------------
+router.get('/cep/:cep', async (req, res) => {
+  try {
+    const { cep } = req.params;
+    const endereco = await fetchEnderecoByCep(cep);
+    res.json(endereco);
+  } catch (error: any) {
+    const isCepInvalido = error.message?.includes('inválido') || error.message?.includes('não encontrado');
+    res.status(isCepInvalido ? 400 : 502).json({ error: error.message || 'Erro ao consultar CEP' });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Pública — Lista academias ativas
+// GET /academias
+// ---------------------------------------------------------------------------
 router.get('/', async (req, res) => {
   try {
     const { data, error } = await supabase
       .from('Academia')
-      .select('id, nome, endereco, nivel_selo, foto_url, verificada')
+      .select('id, nome, endereco, nivel_selo, foto_url, verificada, atividades')
       .eq('ativa', true);
 
     if (error) throw error;
@@ -48,7 +99,10 @@ router.get('/', async (req, res) => {
   }
 });
 
-// Pública - Perfil da academia
+// ---------------------------------------------------------------------------
+// Pública — Perfil completo de uma academia
+// GET /academias/:id
+// ---------------------------------------------------------------------------
 router.get('/:id', async (req, res) => {
   try {
     const { data, error } = await supabase
@@ -66,18 +120,29 @@ router.get('/:id', async (req, res) => {
   }
 });
 
-// Privada (Academia) - Cadastro (com upload opcional de foto de perfil)
+// ---------------------------------------------------------------------------
+// Privada (Academia) — Cadastro com upload de foto, endereço via ViaCEP e atividades
+// POST /academias
+// ---------------------------------------------------------------------------
 router.post('/', upload.single('foto'), requireAuth, async (req, res) => {
   try {
     const auth_id = req.user?.sub;
     if (!auth_id) return res.status(400).json({ error: 'Token inválido: sub ausente' });
 
-    const { nome, cnpj, endereco, telefone, instagram, descricao, foto_url } = req.body;
+    const { nome, cnpj, endereco, cep, telefone, instagram, descricao, foto_url } = req.body;
     if (!nome) return res.status(400).json({ error: 'O nome da academia é obrigatório' });
+
+    // Validar atividades
+    let atividades: Atividade[] = [];
+    try {
+      atividades = parseAtividades(req.body.atividades);
+    } catch (err: any) {
+      return res.status(400).json({ error: err.message });
+    }
 
     const user = await findOrCreateUser(auth_id, req.user?.email, 'ACADEMIA');
 
-    // Verificar se já possui academia
+    // Verificar se já possui academia cadastrada
     const { data: existing } = await supabase
       .from('Academia')
       .select('id')
@@ -88,16 +153,27 @@ router.post('/', upload.single('foto'), requireAuth, async (req, res) => {
       return res.status(400).json({ error: 'Usuário já possui uma academia cadastrada' });
     }
 
-    // Processar endereço se vier como string (comum em formulários multipart/form-data)
-    let parsedEndereco = {};
+    // Montar endereço: se vier cep e campos incompletos, consulta ViaCEP
+    let parsedEndereco: Record<string, any> = {};
     if (typeof endereco === 'string') {
-      try {
-        parsedEndereco = JSON.parse(endereco);
-      } catch {
-        parsedEndereco = {};
-      }
-    } else if (endereco) {
+      try { parsedEndereco = JSON.parse(endereco); } catch { parsedEndereco = {}; }
+    } else if (endereco && typeof endereco === 'object') {
       parsedEndereco = endereco;
+    }
+
+    // Se veio CEP (isolado ou dentro do endereço), busca o restante automaticamente
+    const cepFinal = cep || parsedEndereco.cep;
+    if (cepFinal && !parsedEndereco.cidade) {
+      try {
+        const dadosCep = await fetchEnderecoByCep(cepFinal);
+        parsedEndereco = {
+          ...dadosCep,
+          numero: parsedEndereco.numero || null,
+          complemento: parsedEndereco.complemento || dadosCep.complemento || null,
+        };
+      } catch (err: any) {
+        return res.status(400).json({ error: `CEP inválido: ${err.message}` });
+      }
     }
 
     // Upload da foto de perfil para o bucket público 'academias'
@@ -121,6 +197,7 @@ router.post('/', upload.single('foto'), requireAuth, async (req, res) => {
         instagram: instagram || null,
         descricao: descricao || null,
         foto_url: finalFotoUrl,
+        atividades,
         nivel_selo: 'NENHUM',
       })
       .select()
@@ -134,7 +211,10 @@ router.post('/', upload.single('foto'), requireAuth, async (req, res) => {
   }
 });
 
-// Privada (Academia) - Atualização (com upload opcional de foto de perfil)
+// ---------------------------------------------------------------------------
+// Privada (Academia) — Atualização com upload de foto, endereço e atividades
+// PATCH /academias/:id
+// ---------------------------------------------------------------------------
 router.patch('/:id', upload.single('foto'), requireAuth, async (req, res) => {
   try {
     const auth_id = req.user?.sub;
@@ -150,7 +230,7 @@ router.patch('/:id', upload.single('foto'), requireAuth, async (req, res) => {
 
     const { data: academia } = await supabase
       .from('Academia')
-      .select('user_id, foto_url')
+      .select('user_id, foto_url, endereco, atividades')
       .eq('id', id)
       .maybeSingle();
 
@@ -158,18 +238,42 @@ router.patch('/:id', upload.single('foto'), requireAuth, async (req, res) => {
       return res.status(403).json({ error: 'Acesso negado ou academia não encontrada' });
     }
 
-    const { nome, cnpj, endereco, telefone, instagram, descricao, foto_url } = req.body;
+    const { nome, cnpj, endereco, cep, telefone, instagram, descricao, foto_url } = req.body;
 
-    let parsedEndereco = undefined;
-    if (endereco !== undefined) {
+    // Montar endereço atualizado
+    let parsedEndereco: Record<string, any> | undefined = undefined;
+    if (endereco !== undefined || cep !== undefined) {
       if (typeof endereco === 'string') {
-        try {
-          parsedEndereco = JSON.parse(endereco);
-        } catch {
-          parsedEndereco = {};
-        }
-      } else {
+        try { parsedEndereco = JSON.parse(endereco); } catch { parsedEndereco = {}; }
+      } else if (endereco && typeof endereco === 'object') {
         parsedEndereco = endereco;
+      } else {
+        parsedEndereco = { ...(academia.endereco || {}) };
+      }
+
+      // Se veio novo cep, busca endereço completo
+      const cepFinal = cep || parsedEndereco?.cep;
+      if (cepFinal && (!parsedEndereco?.cidade || cep)) {
+        try {
+          const dadosCep = await fetchEnderecoByCep(cepFinal);
+          parsedEndereco = {
+            ...dadosCep,
+            numero: parsedEndereco?.numero || null,
+            complemento: parsedEndereco?.complemento || dadosCep.complemento || null,
+          };
+        } catch (err: any) {
+          return res.status(400).json({ error: `CEP inválido: ${err.message}` });
+        }
+      }
+    }
+
+    // Atividades: só atualiza se enviado
+    let atividadesUpdate: Atividade[] | undefined = undefined;
+    if (req.body.atividades !== undefined) {
+      try {
+        atividadesUpdate = parseAtividades(req.body.atividades);
+      } catch (err: any) {
+        return res.status(400).json({ error: err.message });
       }
     }
 
@@ -183,17 +287,21 @@ router.patch('/:id', upload.single('foto'), requireAuth, async (req, res) => {
       finalFotoUrl = StorageService.getPublicUrl('academias', filePath);
     }
 
+    // Montar objeto de atualização (apenas campos enviados)
+    const updatePayload: Record<string, any> = {
+      foto_url: finalFotoUrl,
+    };
+    if (nome !== undefined) updatePayload.nome = nome;
+    if (cnpj !== undefined) updatePayload.cnpj = cnpj;
+    if (telefone !== undefined) updatePayload.telefone = telefone;
+    if (instagram !== undefined) updatePayload.instagram = instagram;
+    if (descricao !== undefined) updatePayload.descricao = descricao;
+    if (parsedEndereco !== undefined) updatePayload.endereco = parsedEndereco;
+    if (atividadesUpdate !== undefined) updatePayload.atividades = atividadesUpdate;
+
     const { data: updated, error } = await supabase
       .from('Academia')
-      .update({
-        nome,
-        cnpj,
-        endereco: parsedEndereco,
-        telefone,
-        instagram,
-        descricao,
-        foto_url: finalFotoUrl,
-      })
+      .update(updatePayload)
       .eq('id', id)
       .select()
       .single();
@@ -206,7 +314,10 @@ router.patch('/:id', upload.single('foto'), requireAuth, async (req, res) => {
   }
 });
 
-// Privada (Admin) - Verificação/Selo da academia
+// ---------------------------------------------------------------------------
+// Privada (Admin) — Verificação/Selo da academia
+// POST /academias/:id/verificar
+// ---------------------------------------------------------------------------
 router.post('/:id/verificar', requireAuth, async (req, res) => {
   try {
     const auth_id = req.user?.sub;

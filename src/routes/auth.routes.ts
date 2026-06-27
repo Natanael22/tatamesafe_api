@@ -2,6 +2,8 @@ import { Router } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import supabase from '../lib/supabase';
+import { fetchEnderecoByCep } from '../lib/viacep';
+import { ATIVIDADES_VALIDAS, type Atividade } from '../types/database.types';
 import logger from '../lib/logger';
 
 const router = Router();
@@ -194,6 +196,7 @@ router.post('/signup/academia', async (req, res) => {
       telefone,
       cnpj,
       endereco,
+      cep,
       instagram,
       descricao,
       foto_url,
@@ -201,6 +204,22 @@ router.post('/signup/academia', async (req, res) => {
 
     if (!email || !password || !nome) {
       return res.status(400).json({ error: 'Campos obrigatórios: email, password, nome da academia' });
+    }
+
+    // Validar atividades
+    let atividades: Atividade[] = [];
+    if (req.body.atividades) {
+      let lista: string[] = [];
+      if (typeof req.body.atividades === 'string') {
+        try { lista = JSON.parse(req.body.atividades); } catch { lista = req.body.atividades.split(',').map((s: string) => s.trim()); }
+      } else if (Array.isArray(req.body.atividades)) {
+        lista = req.body.atividades;
+      }
+      const invalidas = lista.filter((a) => !ATIVIDADES_VALIDAS.includes(a as Atividade));
+      if (invalidas.length > 0) {
+        return res.status(400).json({ error: `Atividades inválidas: ${invalidas.join(', ')}. Permitidas: ${ATIVIDADES_VALIDAS.join(', ')}` });
+      }
+      atividades = lista as Atividade[];
     }
 
     let auth_id: string;
@@ -266,18 +285,41 @@ router.post('/signup/academia', async (req, res) => {
       return res.status(500).json({ error: 'Erro ao salvar o perfil do usuário' });
     }
 
-    // 5. Inserir Academia
+    // 5. Montar endereço (com ViaCEP se CEP fornecido)
+    let parsedEndereco: Record<string, any> = {};
+    if (typeof endereco === 'string') {
+      try { parsedEndereco = JSON.parse(endereco); } catch { parsedEndereco = {}; }
+    } else if (endereco && typeof endereco === 'object') {
+      parsedEndereco = endereco;
+    }
+
+    const cepFinal = cep || parsedEndereco.cep;
+    if (cepFinal && !parsedEndereco.cidade) {
+      try {
+        const dadosCep = await fetchEnderecoByCep(cepFinal);
+        parsedEndereco = {
+          ...dadosCep,
+          numero: parsedEndereco.numero || null,
+          complemento: parsedEndereco.complemento || dadosCep.complemento || null,
+        };
+      } catch (err: any) {
+        return res.status(400).json({ error: `CEP inválido: ${err.message}` });
+      }
+    }
+
+    // 6. Inserir Academia
     const { data: academiaRecord, error: academiaError } = await supabase
       .from('Academia')
       .insert({
         user_id: userRecord.id,
         nome,
         cnpj: cnpj || null,
-        endereco: endereco || {},
+        endereco: parsedEndereco,
         telefone: telefone || null,
         instagram: instagram || null,
         descricao: descricao || null,
         foto_url: foto_url || null,
+        atividades,
         nivel_selo: 'NENHUM',
         verificada: false,
         ativa: true,
