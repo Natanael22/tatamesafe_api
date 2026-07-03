@@ -65,9 +65,9 @@ app.use(
     redact: isDev ? undefined : ['req.headers.authorization', 'req.body.descricao_enc', 'req.body.descricao'],
     serializers: isDev
       ? {
-          req: () => undefined,
-          res: () => undefined,
-        }
+        req: () => undefined,
+        res: () => undefined,
+      }
       : undefined,
     customSuccessMessage: isDev
       ? (req, res, responseTime) => `${req.method} ${req.originalUrl || req.url} ${res.statusCode} - ${responseTime}ms`

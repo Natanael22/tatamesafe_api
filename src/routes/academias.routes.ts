@@ -217,6 +217,9 @@ router.post('/', upload.single('foto'), requireAuth, async (req, res) => {
 // ---------------------------------------------------------------------------
 router.patch('/:id', upload.single('foto'), requireAuth, async (req, res) => {
   try {
+    console.log("Patch Academia", req.body);
+    console.log("Patch Academia Foto", req.file);
+
     const auth_id = req.user?.sub;
     const id = String(req.params.id);
 
