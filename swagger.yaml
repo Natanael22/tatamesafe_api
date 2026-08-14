@@ -1,0 +1,1063 @@
+openapi: 3.0.0
+info:
+  title: TatameSafe API
+  version: 1.0.0
+  description: |
+    API completa para o sistema TatameSafe — canal de denúncia anônima e gestão de academias.
+
+    ## Autenticação
+
+    A API utiliza **JWT Bearer Token** local (assinado com `JWT_SECRET`).
+
+    ### Fluxo de autenticação:
+    1. Chame `POST /auth/signup/aluno` ou `POST /auth/signup/academia` para criar uma conta.
+    2. Ou chame `POST /auth/signin` para obter um token com conta existente.
+    3. A resposta retorna um objeto `session` com o campo `access_token`.
+    4. Use esse token em todas as rotas protegidas no header:
+       ```
+       Authorization: Bearer <session.access_token>
+       ```
+
+    > ⚠️ **Importante**: O `access_token` retornado é um JWT local gerado pela **própria API**,
+    > não um token do Supabase. Não utilize tokens de outras fontes.
+
+servers:
+  - url: http://localhost:3000/api/v1
+    description: Servidor Local de Desenvolvimento
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        Token JWT obtido em `POST /auth/signin` ou `POST /auth/signup/*`.
+        Extraia o campo `session.access_token` da resposta e envie como `Bearer <token>`.
+
+  schemas:
+    Session:
+      type: object
+      description: Objeto de sessão retornado após signup ou signin. Use `access_token` para autenticar as demais requisições.
+      properties:
+        access_token:
+          type: string
+          description: JWT Bearer Token a ser enviado no header `Authorization`.
+          example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ1dWlkLWRvLXVzdWFyaW8iLCJlbWFpbCI6ImFsdW5vQHRlc3RlLmNvbSIsInJvbGUiOiJhdXRoZW50aWNhdGVkIiwiYXVkIjoiYXV0aGVudGljYXRlZCIsImlhdCI6MTcwMDAwMDAwMCwiZXhwIjoxNzAwMDAzNjAwfQ.assinatura"
+        token_type:
+          type: string
+          example: "bearer"
+        expires_in:
+          type: integer
+          description: Tempo de expiração em segundos.
+          example: 3600
+        expires_at:
+          type: integer
+          description: Timestamp Unix de expiração.
+          example: 1700003600
+
+    UserPublic:
+      type: object
+      properties:
+        id:
+          type: string
+          example: "clx1234567890"
+        auth_id:
+          type: string
+          format: uuid
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        tipo:
+          type: string
+          enum: [ALUNO, ACADEMIA, ADMIN]
+          example: "ALUNO"
+        nome:
+          type: string
+          example: "Aluno Teste"
+        email:
+          type: string
+          example: "aluno@teste.com"
+        telefone:
+          type: string
+          nullable: true
+          example: "11999999999"
+        criado_em:
+          type: string
+          format: date-time
+          example: "2025-01-01T00:00:00.000Z"
+
+    Academia:
+      type: object
+      properties:
+        id:
+          type: string
+        user_id:
+          type: string
+        nome:
+          type: string
+        cnpj:
+          type: string
+          nullable: true
+        endereco:
+          type: object
+          properties:
+            cep:
+              type: string
+              example: "01310-100"
+            logradouro:
+              type: string
+              example: "Avenida Paulista"
+            numero:
+              type: string
+              nullable: true
+              example: "1000"
+            complemento:
+              type: string
+              nullable: true
+            bairro:
+              type: string
+              example: "Bela Vista"
+            cidade:
+              type: string
+              example: "São Paulo"
+            estado:
+              type: string
+              example: "SP"
+        telefone:
+          type: string
+          nullable: true
+        instagram:
+          type: string
+          nullable: true
+        descricao:
+          type: string
+          nullable: true
+        foto_url:
+          type: string
+          nullable: true
+        atividades:
+          type: array
+          description: Modalidades oferecidas pela academia.
+          items:
+            type: string
+            enum: [JIU_JITSU, MUAY_THAI, BOXE, FUNCIONAL]
+          example: ["JIU_JITSU", "MUAY_THAI"]
+        nivel_selo:
+          type: string
+          enum: [NENHUM, BRONZE, PRATA, OURO]
+        verificada:
+          type: boolean
+        ativa:
+          type: boolean
+
+    EnderecoViaCep:
+      type: object
+      properties:
+        cep:
+          type: string
+          example: "01310-100"
+        logradouro:
+          type: string
+          example: "Avenida Paulista"
+        complemento:
+          type: string
+          example: ""
+        bairro:
+          type: string
+          example: "Bela Vista"
+        cidade:
+          type: string
+          example: "São Paulo"
+        estado:
+          type: string
+          example: "SP"
+
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "Mensagem de erro"
+
+paths:
+  # ─── Autenticação ──────────────────────────────────────────────────────────
+
+  /auth/signup/aluno:
+    post:
+      summary: Cadastra um novo aluno
+      description: |
+        Cria uma conta de aluno. Se o e-mail já existe no ecossistema (outro app),
+        reutiliza a identidade do Supabase Auth e cria apenas o perfil local.
+
+        **Após o cadastro**, utilize o `session.access_token` retornado para autenticar as demais chamadas.
+      tags:
+        - Autenticação
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password, nome]
+              properties:
+                email:
+                  type: string
+                  format: email
+                  example: aluno@teste.com
+                password:
+                  type: string
+                  minLength: 6
+                  example: "senha@123"
+                nome:
+                  type: string
+                  example: "Aluno Teste"
+                telefone:
+                  type: string
+                  example: "11999999999"
+      responses:
+        "201":
+          description: Aluno cadastrado com sucesso.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Cadastro de aluno realizado com sucesso"
+                  session:
+                    $ref: "#/components/schemas/Session"
+                  user:
+                    $ref: "#/components/schemas/UserPublic"
+              example:
+                message: "Cadastro de aluno realizado com sucesso"
+                session:
+                  access_token: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+                  token_type: "bearer"
+                  expires_in: 3600
+                  expires_at: 1700003600
+                user:
+                  id: "clx1234567890"
+                  auth_id: "550e8400-e29b-41d4-a716-446655440000"
+                  tipo: "ALUNO"
+                  nome: "Aluno Teste"
+                  email: "aluno@teste.com"
+                  telefone: "11999999999"
+        "400":
+          description: Campos obrigatórios ausentes ou inválidos.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                error: "Campos obrigatórios: email, password, nome"
+        "409":
+          description: E-mail já cadastrado neste app.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                error: "Este e-mail já está cadastrado neste app. Por favor, faça login."
+
+  /auth/signup/academia:
+    post:
+      summary: Cadastra uma nova academia
+      description: |
+        Cria uma conta de academia com perfil completo.
+
+        **Após o cadastro**, utilize o `session.access_token` retornado para autenticar as demais chamadas.
+      tags:
+        - Autenticação
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password, nome]
+              properties:
+                email:
+                  type: string
+                  format: email
+                  example: academia@teste.com
+                password:
+                  type: string
+                  minLength: 6
+                  example: "senha@123"
+                nome:
+                  type: string
+                  example: "Academia Teste"
+                telefone:
+                  type: string
+                  example: "11888888888"
+                cnpj:
+                  type: string
+                  example: "12.345.678/0001-99"
+                endereco:
+                  type: object
+                  description: Se cep for fornecido, os campos são preenchidos automaticamente via ViaCEP.
+                  properties:
+                    cep:
+                      type: string
+                      example: "01310-100"
+                    numero:
+                      type: string
+                      example: "100"
+                    complemento:
+                      type: string
+                    logradouro:
+                      type: string
+                    bairro:
+                      type: string
+                    cidade:
+                      type: string
+                    estado:
+                      type: string
+                cep:
+                  type: string
+                  description: CEP para preenchimento automático do endereço via ViaCEP. Se fornecido, sobrepõe os campos de endereço.
+                  example: "01310-100"
+                instagram:
+                  type: string
+                  example: "@academiateste"
+                descricao:
+                  type: string
+                  example: "Academia especializada em Jiu-Jitsu e Judô"
+                atividades:
+                  type: array
+                  description: "Modalidades oferecidas. Valores válidos: JIU_JITSU, MUAY_THAI, BOXE, FUNCIONAL"
+                  items:
+                    type: string
+                    enum: [JIU_JITSU, MUAY_THAI, BOXE, FUNCIONAL]
+                  example: ["JIU_JITSU", "MUAY_THAI"]
+      responses:
+        "201":
+          description: Academia cadastrada com sucesso.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Cadastro de academia realizado com sucesso"
+                  session:
+                    $ref: "#/components/schemas/Session"
+                  user:
+                    $ref: "#/components/schemas/UserPublic"
+                  academia:
+                    $ref: "#/components/schemas/Academia"
+              example:
+                message: "Cadastro de academia realizado com sucesso"
+                session:
+                  access_token: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+                  token_type: "bearer"
+                  expires_in: 3600
+                  expires_at: 1700003600
+                user:
+                  id: "clx0987654321"
+                  tipo: "ACADEMIA"
+                  nome: "Academia Teste"
+                  email: "academia@teste.com"
+                academia:
+                  id: "clxacademia01"
+                  nome: "Academia Teste"
+                  nivel_selo: "NENHUM"
+                  verificada: false
+                  ativa: true
+        "400":
+          description: Campos obrigatórios ausentes.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: E-mail já cadastrado.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /auth/signin:
+    post:
+      summary: Realiza login
+      description: |
+        Autentica o usuário com e-mail e senha.
+
+        **Retorna** um objeto `session` com o `access_token` a ser usado como `Bearer Token`
+        no header `Authorization` de todas as rotas protegidas.
+
+        ```
+        Authorization: Bearer <session.access_token>
+        ```
+      tags:
+        - Autenticação
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email:
+                  type: string
+                  format: email
+                  example: aluno@teste.com
+                password:
+                  type: string
+                  example: "senha@123"
+      responses:
+        "200":
+          description: Autenticado com sucesso.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Autenticado com sucesso"
+                  session:
+                    $ref: "#/components/schemas/Session"
+                  user:
+                    $ref: "#/components/schemas/UserPublic"
+              example:
+                message: "Autenticado com sucesso"
+                session:
+                  access_token: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+                  token_type: "bearer"
+                  expires_in: 3600
+                  expires_at: 1700003600
+                user:
+                  id: "clx1234567890"
+                  tipo: "ALUNO"
+                  nome: "Aluno Teste"
+                  email: "aluno@teste.com"
+        "400":
+          description: E-mail ou senha não informados.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: E-mail ou senha inválidos.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                error: "E-mail ou senha inválidos"
+
+  /auth/signout:
+    post:
+      summary: Encerra a sessão
+      description: |
+        Invalida a sessão do usuário. O cliente deve descartar o `access_token` localmente.
+
+        > JWTs são stateless — o servidor confirma a operação, mas a invalidação real
+        > ocorre pelo descarte no cliente.
+      tags:
+        - Autenticação
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Sessão encerrada com sucesso.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Sessão encerrada com sucesso"
+        "400":
+          description: Token não fornecido.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  # ─── Usuários ──────────────────────────────────────────────────────────────
+
+  /users/me:
+    get:
+      summary: Retorna o perfil do usuário logado
+      description: "Retorna os dados do usuário autenticado. Requer `Authorization: Bearer <access_token>`."
+      tags:
+        - Usuários
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Perfil retornado com sucesso.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserPublic"
+        "401":
+          description: Token não fornecido ou inválido.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    patch:
+      summary: Atualiza o perfil do usuário logado
+      tags:
+        - Usuários
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                nome:
+                  type: string
+                telefone:
+                  type: string
+      responses:
+        "200":
+          description: Perfil atualizado com sucesso.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserPublic"
+        "401":
+          description: Token não fornecido ou inválido.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  # ─── Denúncias ─────────────────────────────────────────────────────────────
+
+  /denuncia:
+    post:
+      summary: Registra uma nova denúncia anônima
+      description: |
+        Envia uma nova denúncia. A descrição deve ser **criptografada** com a chave pública RSA
+        obtida em `GET /crypto/public-key`, codificada em **base64**.
+
+        Pode incluir um arquivo de evidência opcional.
+      tags:
+        - Denúncia
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [tipo, descricao_enc]
+              properties:
+                tipo:
+                  type: string
+                  enum: [ASSEDIO_SEXUAL, ASSEDIO_MORAL, VIOLENCIA, OUTRO]
+                  example: ASSEDIO_SEXUAL
+                descricao_enc:
+                  type: string
+                  description: Texto da denúncia criptografado com RSA Public Key e codificado em base64.
+                  example: "ZXhhbXBsZV9lbmNyeXB0ZWRfcGF5bG9hZA=="
+                academia_ref:
+                  type: string
+                  description: ID da academia relacionada (opcional).
+                  example: "clxacademia01"
+                urgencia:
+                  type: string
+                  enum: [BAIXA, MEDIA, ALTA, CRITICA]
+                  example: MEDIA
+                envolve_menor:
+                  type: boolean
+                  example: false
+                evidencia:
+                  type: string
+                  format: binary
+                  description: Arquivo de evidência opcional (imagem, PDF).
+      responses:
+        "201":
+          description: Denúncia registrada com sucesso.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  protocolo:
+                    type: string
+                    example: "TS-2025-A1B2C3"
+
+  /denuncia/status/{protocolo}:
+    get:
+      summary: Consulta o status de uma denúncia
+      tags:
+        - Denúncia
+      parameters:
+        - in: path
+          name: protocolo
+          required: true
+          schema:
+            type: string
+          example: "TS-2025-A1B2C3"
+      responses:
+        "200":
+          description: Status atual da denúncia.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "RECEBIDA"
+                  atualizado_em:
+                    type: string
+                    format: date-time
+                  mensagem_publica:
+                    type: string
+                    example: "Denúncia recebida e em processamento"
+
+  /denuncia/admin:
+    get:
+      summary: Lista todas as denúncias (Admin)
+      description: Retorna todas as denúncias com histórico completo. Requer token de Admin.
+      tags:
+        - Denúncia (Admin)
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Lista de denúncias retornada com sucesso.
+        "401":
+          description: Token não fornecido ou inválido.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Acesso negado — usuário não é Admin.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /denuncia/admin/{id}/status:
+    patch:
+      summary: Atualiza status da denúncia (Admin)
+      description: Atualiza o status e registra no histórico. Requer token de Admin.
+      tags:
+        - Denúncia (Admin)
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status:
+                  type: string
+                  enum: [RECEBIDA, TRIAGEM, EM_APURACAO, ENCERRADA]
+                nota_interna:
+                  type: string
+      responses:
+        "200":
+          description: Status atualizado com sucesso.
+        "401":
+          description: Token não fornecido ou inválido.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  # ─── Criptografia ──────────────────────────────────────────────────────────
+
+  /crypto/public-key:
+    get:
+      summary: Retorna a chave pública RSA
+      description: |
+        Retorna a chave pública RSA em formato PEM. Utilize-a para criptografar
+        o texto da denúncia antes de enviar para `POST /denuncia`.
+      tags:
+        - Criptografia
+      responses:
+        "200":
+          description: Chave pública RSA.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  key:
+                    type: string
+                    description: Chave pública RSA em formato PEM.
+                    example: "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhki...\n-----END PUBLIC KEY-----"
+
+  # ─── Academias ─────────────────────────────────────────────────────────────
+
+  /academias/cep/{cep}:
+    get:
+      summary: Consulta endereço por CEP (ViaCEP)
+      description: |
+        Busca o endereço completo a partir de um CEP via API pública do ViaCEP.
+        Use este endpoint para preencher automaticamente os campos de endereço no formulário de cadastro.
+      tags:
+        - Academias
+      parameters:
+        - in: path
+          name: cep
+          required: true
+          schema:
+            type: string
+          example: "01310100"
+          description: "CEP com ou sem traço (ex: 01310-100 ou 01310100)"
+      responses:
+        "200":
+          description: Endereço encontrado.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnderecoViaCep"
+              example:
+                cep: "01310-100"
+                logradouro: "Avenida Paulista"
+                complemento: ""
+                bairro: "Bela Vista"
+                cidade: "São Paulo"
+                estado: "SP"
+        "400":
+          description: CEP inválido ou não encontrado.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                error: "CEP 00000000 não encontrado"
+        "502":
+          description: Erro ao comunicar com o serviço ViaCEP.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /academias:
+    get:
+      summary: Lista academias certificadas
+      description: Retorna academias ativas. Não requer autenticação.
+      tags:
+        - Academias
+      responses:
+        "200":
+          description: Lista de academias.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Academia"
+    post:
+      summary: Cria o perfil de uma academia (Admin)
+      description: Requer token de Admin. Aceita multipart/form-data para upload de foto.
+      tags:
+        - Academias
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [nome]
+              properties:
+                nome:
+                  type: string
+                cnpj:
+                  type: string
+                cep:
+                  type: string
+                  description: CEP para preenchimento automático do endereço via ViaCEP.
+                  example: "01310-100"
+                endereco:
+                  type: string
+                  description: Objeto JSON serializado. Se `cep` for fornecido, os campos são preenchidos automaticamente.
+                  example: '{"numero":"1000","complemento":"Sala 1"}'
+                telefone:
+                  type: string
+                instagram:
+                  type: string
+                descricao:
+                  type: string
+                atividades:
+                  type: string
+                  description: |
+                    Array de atividades em formato JSON ou separadas por vírgula.
+                    Valores válidos: `JIU_JITSU`, `MUAY_THAI`, `BOXE`, `FUNCIONAL`.
+                  example: '["JIU_JITSU","MUAY_THAI","BOXE","FUNCIONAL"]'
+                foto:
+                  type: string
+                  format: binary
+                  description: Foto de perfil da academia (máx. 5MB).
+      responses:
+        "201":
+          description: Academia criada com sucesso.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Academia"
+        "401":
+          description: Token não fornecido ou inválido.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /academias/{id}:
+    get:
+      summary: Consulta perfil de uma academia
+      tags:
+        - Academias
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Perfil da academia.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Academia"
+        "404":
+          description: Academia não encontrada.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    patch:
+      summary: Atualiza perfil de uma academia
+      description: Requer token do dono da academia ou Admin.
+      tags:
+        - Academias
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                nome:
+                  type: string
+                cnpj:
+                  type: string
+                endereco:
+                  type: string
+                  description: Objeto JSON serializado como string.
+                telefone:
+                  type: string
+                instagram:
+                  type: string
+                descricao:
+                  type: string
+                foto:
+                  type: string
+                  format: binary
+      responses:
+        "200":
+          description: Academia atualizada com sucesso.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Academia"
+        "401":
+          description: Token não fornecido ou inválido.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /academias/{id}/verificar:
+    post:
+      summary: Verifica e emite selo para a academia (Admin)
+      description: Requer token de Admin.
+      tags:
+        - Academias
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                verificada:
+                  type: boolean
+                nivel_selo:
+                  type: string
+                  enum: [NENHUM, BRONZE, PRATA, OURO]
+      responses:
+        "200":
+          description: Academia verificada com sucesso.
+        "401":
+          description: Token não fornecido ou inválido.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  # ─── Avaliações ────────────────────────────────────────────────────────────
+
+  /avaliacoes:
+    get:
+      summary: Lista avaliações de uma academia
+      tags:
+        - Avaliações
+      parameters:
+        - in: query
+          name: academia_id
+          schema:
+            type: string
+          description: Filtra avaliações por academia.
+      responses:
+        "200":
+          description: Lista de avaliações.
+    post:
+      summary: Registra ou atualiza avaliação (Aluno)
+      description: Requer token de Aluno.
+      tags:
+        - Avaliações
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [academia_id, nota]
+              properties:
+                academia_id:
+                  type: string
+                nota:
+                  type: integer
+                  minimum: 1
+                  maximum: 5
+                  example: 4
+                comentario:
+                  type: string
+                anonima:
+                  type: boolean
+                  example: false
+                categorias:
+                  type: object
+      responses:
+        "201":
+          description: Avaliação registrada com sucesso.
+        "401":
+          description: Token não fornecido ou inválido.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  # ─── Certificados ──────────────────────────────────────────────────────────
+
+  /certificados:
+    get:
+      summary: Lista certificados de uma academia
+      tags:
+        - Certificados
+      parameters:
+        - in: query
+          name: academia_id
+          schema:
+            type: string
+          description: Filtra certificados por academia.
+      responses:
+        "200":
+          description: Lista de certificados.
+    post:
+      summary: Emite um novo certificado (Admin)
+      description: Requer token de Admin.
+      tags:
+        - Certificados
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [academia_id, tipo, instrutor, validade_em]
+              properties:
+                academia_id:
+                  type: string
+                tipo:
+                  type: string
+                  enum: [PROTECAO_MENORES, PREVENCAO_ASSEDIO, INCLUSAO, OUTRO]
+                instrutor:
+                  type: string
+                validade_em:
+                  type: string
+                  format: date-time
+                pdf:
+                  type: string
+                  format: binary
+                  description: Arquivo PDF do certificado (opcional).
+      responses:
+        "201":
+          description: Certificado emitido com sucesso.
+        "401":
+          description: Token não fornecido ou inválido.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /certificados/{id}:
+    get:
+      summary: Consulta um certificado específico
+      tags:
+        - Certificados
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Certificado retornado com sucesso.
+        "404":
+          description: Certificado não encontrado.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"

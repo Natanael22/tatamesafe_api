@@ -7,7 +7,7 @@ node_modules
 doc_content.txt
 TatameSafe_EspecificacaoTecnica.docx
 generate-tokens.ts
-swagger.yaml
+
 /supabase/migrations/*
 /keys
 *.pem
