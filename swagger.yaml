@@ -590,7 +590,13 @@ paths:
 
   /denuncia/status/{protocolo}:
     get:
-      summary: Consulta o status de uma denúncia
+      summary: Consulta o status e histórico de uma denúncia
+      description: |
+        Endpoint público. Permite que o denunciante acompanhe o andamento do caso
+        pelo protocolo recebido ao registrar a denúncia.
+
+        O campo `historico` retorna cada mudança de status com rótulo e mensagem
+        amigáveis — sem expor notas internas, operadores ou dados sensíveis.
       tags:
         - Denúncia
       parameters:
@@ -602,50 +608,263 @@ paths:
           example: "TS-2025-A1B2C3"
       responses:
         "200":
-          description: Status atual da denúncia.
+          description: Status e histórico público da denúncia.
           content:
             application/json:
               schema:
                 type: object
                 properties:
+                  protocolo:
+                    type: string
+                    example: "TS-2025-A1B2C3"
                   status:
                     type: string
-                    example: "RECEBIDA"
+                    enum: [RECEBIDA, TRIAGEM, EM_APURACAO, ENCERRADA]
+                    example: "EM_APURACAO"
                   atualizado_em:
                     type: string
                     format: date-time
                   mensagem_publica:
                     type: string
-                    example: "Denúncia recebida e em processamento"
+                    example: "Denúncia em apuração pelas autoridades competentes"
+                  historico:
+                    type: array
+                    description: |
+                      Lista ordenada das mudanças de status, da mais antiga para a mais recente.
+                      A primeira entrada sempre representa a criação da denúncia (RECEBIDA).
+                    items:
+                      type: object
+                      properties:
+                        status:
+                          type: string
+                          enum: [RECEBIDA, TRIAGEM, EM_APURACAO, ENCERRADA]
+                          example: "TRIAGEM"
+                        rotulo:
+                          type: string
+                          description: Rótulo legível do status em português
+                          example: "Em Triagem"
+                        mensagem:
+                          type: string
+                          description: Descrição pública amigável da etapa
+                          example: "Denúncia em triagem pela equipe responsável"
+                        data:
+                          type: string
+                          format: date-time
+                          description: Data e hora em que o status foi atribuído
+              example:
+                protocolo: "TS-2025-A1B2C3"
+                status: "EM_APURACAO"
+                atualizado_em: "2025-06-10T14:32:00Z"
+                mensagem_publica: "Denúncia em apuração pelas autoridades competentes"
+                historico:
+                  - status: RECEBIDA
+                    rotulo: "Recebida"
+                    mensagem: "Denúncia registrada com sucesso e aguardando triagem."
+                    data: "2025-06-10T10:00:00Z"
+                  - status: TRIAGEM
+                    rotulo: "Em Triagem"
+                    mensagem: "Denúncia em triagem pela equipe responsável"
+                    data: "2025-06-10T12:15:00Z"
+                  - status: EM_APURACAO
+                    rotulo: "Em Apuração"
+                    mensagem: "Denúncia em apuração pelas autoridades competentes"
+                    data: "2025-06-10T14:32:00Z"
+        "404":
+          description: Protocolo não encontrado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
 
-  /denuncia/admin:
+  /denuncia/admin/stats:
     get:
-      summary: Lista todas as denúncias (Admin)
-      description: Retorna todas as denúncias com histórico completo. Requer token de Admin.
+      summary: Estatísticas do painel de denúncias (Admin)
+      description: |
+        Retorna contagens por status, urgência, violações de SLA e casos envolvendo menores.
       tags:
         - Denúncia (Admin)
       security:
         - bearerAuth: []
       responses:
-        "200":
-          description: Lista de denúncias retornada com sucesso.
-        "401":
-          description: Token não fornecido ou inválido.
+        '200':
+          description: Estatísticas retornadas.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Error"
-        "403":
-          description: Acesso negado — usuário não é Admin.
+                type: object
+                properties:
+                  total: { type: integer, example: 42 }
+                  por_status:
+                    type: object
+                    properties:
+                      RECEBIDA: { type: integer }
+                      TRIAGEM: { type: integer }
+                      EM_APURACAO: { type: integer }
+                      ENCERRADA: { type: integer }
+                  por_urgencia:
+                    type: object
+                    properties:
+                      BAIXA: { type: integer }
+                      MEDIA: { type: integer }
+                      ALTA: { type: integer }
+                      CRITICA: { type: integer }
+                  sla_violacoes: { type: integer, description: 'Denúncias que ultrapassaram o prazo SLA.' }
+                  envolve_menor: { type: integer, description: 'Total envolvendo menores.' }
+                  pendentes_triagem: { type: integer, description: 'Status RECEBIDA há mais de 1h.' }
+        '403':
+          description: Acesso negado.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Error"
+                $ref: '#/components/schemas/Error'
+
+  /denuncia/admin/sla:
+    get:
+      summary: Denúncias com status de SLA (Admin)
+      description: |
+        Retorna denúncias em aberto com informações de SLA calculadas em tempo real.
+
+        **Limites SLA por urgência:**
+        - CRITICA = 2h | ALTA = 8h | MEDIA = 24h | BAIXA = 72h
+
+        Use `?apenas_violacoes=true` para filtrar apenas violações.
+      tags:
+        - Denúncia (Admin)
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: apenas_violacoes
+          schema:
+            type: boolean
+          description: Se true, retorna apenas denúncias com SLA violado.
+      responses:
+        '200':
+          description: Lista com SLA.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    protocolo: { type: string }
+                    status: { type: string }
+                    urgencia: { type: string }
+                    sla_status:
+                      type: string
+                      enum: [OK, ATENCAO, VIOLADO, ENCERRADA]
+                    horas_em_aberto: { type: integer }
+                    horas_restantes: { type: integer, nullable: true }
+                    sla_limite_horas: { type: integer }
+        '403':
+          description: Acesso negado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /denuncia/admin:
+    get:
+      summary: Lista denúncias com filtros (Admin)
+      description: |
+        Retorna denúncias paginadas com filtros opcionais.
+        Cada item inclui `sla_status`, `horas_em_aberto` e URLs assinadas das evidências (válidas 15min).
+      tags:
+        - Denúncia (Admin)
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: status
+          schema:
+            type: string
+            enum: [RECEBIDA, TRIAGEM, EM_APURACAO, ENCERRADA]
+        - in: query
+          name: urgencia
+          schema:
+            type: string
+            enum: [BAIXA, MEDIA, ALTA, CRITICA]
+        - in: query
+          name: envolve_menor
+          schema:
+            type: boolean
+        - in: query
+          name: sem_operador
+          schema:
+            type: boolean
+          description: Se true, retorna apenas denúncias sem operador atribuído.
+        - in: query
+          name: academia_ref
+          schema:
+            type: string
+        - in: query
+          name: data_inicio
+          schema:
+            type: string
+            format: date-time
+        - in: query
+          name: data_fim
+          schema:
+            type: string
+            format: date-time
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            default: 50
+        - in: query
+          name: offset
+          schema:
+            type: integer
+            default: 0
+      responses:
+        '200':
+          description: Lista paginada.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { type: object } }
+                  total: { type: integer }
+                  limit: { type: integer }
+                  offset: { type: integer }
+        '403':
+          description: Acesso negado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /denuncia/admin/{id}:
+    get:
+      summary: Detalhe completo de uma denúncia (Admin)
+      description: Retorna todos os dados, histórico, evidências com URLs assinadas, triagem e SLA atual.
+      tags:
+        - Denúncia (Admin)
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Denúncia encontrada.
+        '404':
+          description: Denúncia não encontrada.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
 
   /denuncia/admin/{id}/status:
     patch:
       summary: Atualiza status da denúncia (Admin)
-      description: Atualiza o status e registra no histórico. Requer token de Admin.
+      description: Atualiza o status e registra automaticamente no histórico com nota interna.
       tags:
         - Denúncia (Admin)
       security:
@@ -669,15 +888,158 @@ paths:
                   enum: [RECEBIDA, TRIAGEM, EM_APURACAO, ENCERRADA]
                 nota_interna:
                   type: string
+                  description: Nota interna (não visível ao denunciante).
       responses:
-        "200":
+        '200':
           description: Status atualizado com sucesso.
-        "401":
-          description: Token não fornecido ou inválido.
+        '400':
+          description: Status inválido.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Error"
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Acesso negado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Denúncia não encontrada.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /denuncia/admin/{id}/triagem:
+    patch:
+      summary: Realiza triagem formal da denúncia (Admin)
+      description: |
+        Registra triagem com categoria confirmada, urgência e notas.
+        Atualiza automaticamente o status para **TRIAGEM**.
+
+        - Só pode ser realizada **uma vez** por denúncia.
+        - Se a urgência for alterada, o prazo SLA é **recalculado automaticamente**.
+      tags:
+        - Denúncia (Admin)
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [categoria_confirmada, urgencia_confirmada]
+              properties:
+                categoria_confirmada:
+                  type: string
+                  enum: [ASSEDIO_SEXUAL, ASSEDIO_MORAL, VIOLENCIA, OUTRO]
+                urgencia_confirmada:
+                  type: string
+                  enum: [BAIXA, MEDIA, ALTA, CRITICA]
+                notas:
+                  type: string
+      responses:
+        '200':
+          description: Triagem realizada com sucesso.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string, example: 'Triagem realizada com sucesso' }
+                  status_atualizado: { type: string, example: 'TRIAGEM' }
+        '409':
+          description: Denúncia já possui triagem registrada.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /denuncia/admin/{id}/encaminhar:
+    patch:
+      summary: Encaminha denúncia para entidade externa (Admin)
+      description: |
+        Registra o encaminhamento e atualiza o status para **EM_APURACAO**.
+
+        **Entidades:** `CONSELHO_TUTELAR` | `DELEGACIA` | `PSICOLOGO` | `MINISTERIO_PUBLICO` | `OUTRO`
+      tags:
+        - Denúncia (Admin)
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [encaminhamento]
+              properties:
+                encaminhamento:
+                  type: string
+                  enum: [CONSELHO_TUTELAR, DELEGACIA, PSICOLOGO, MINISTERIO_PUBLICO, OUTRO]
+                notas:
+                  type: string
+                  description: BO, contatos, etc.
+      responses:
+        '200':
+          description: Denúncia encaminhada com sucesso.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string }
+                  status_atualizado: { type: string, example: 'EM_APURACAO' }
+        '400':
+          description: Encaminhamento inválido ou denúncia encerrada.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /denuncia/admin/{id}/operador:
+    patch:
+      summary: Assumir responsabilidade pela denúncia (Admin)
+      description: Atribui o operador autenticado como responsável pela denúncia.
+      tags:
+        - Denúncia (Admin)
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Denúncia atribuída com sucesso.
+        '403':
+          description: Acesso negado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Denúncia não encontrada.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
 
   # ─── Criptografia ──────────────────────────────────────────────────────────
 

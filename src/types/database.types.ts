@@ -7,6 +7,20 @@ export type DenunciaTipo = 'ASSEDIO_SEXUAL' | 'ASSEDIO_MORAL' | 'VIOLENCIA' | 'O
 export type DenunciaStatus = 'RECEBIDA' | 'TRIAGEM' | 'EM_APURACAO' | 'ENCERRADA';
 export type Urgencia = 'BAIXA' | 'MEDIA' | 'ALTA' | 'CRITICA';
 export type Atividade = 'JIU_JITSU' | 'MUAY_THAI' | 'BOXE' | 'FUNCIONAL';
+export type EncaminhamentoTipo =
+  | 'CONSELHO_TUTELAR'
+  | 'DELEGACIA'
+  | 'PSICOLOGO'
+  | 'MINISTERIO_PUBLICO'
+  | 'OUTRO';
+
+// SLA em horas por urgência (conforme especificação técnica seção 6)
+export const SLA_HORAS: Record<Urgencia, number> = {
+  CRITICA: 2,
+  ALTA: 8,
+  MEDIA: 24,
+  BAIXA: 72,
+};
 
 export const ATIVIDADES_VALIDAS: Atividade[] = ['JIU_JITSU', 'MUAY_THAI', 'BOXE', 'FUNCIONAL'];
 
@@ -72,9 +86,25 @@ export interface Denuncia {
   status: DenunciaStatus;
   urgencia: Urgencia;
   envolve_menor: boolean;
+  sla_prazo?: string | null;      // Prazo SLA calculado na criação
+  operador_id?: string | null;    // Operador responsável
+  encaminhamento?: EncaminhamentoTipo | null; // Para onde foi encaminhada
+  encaminhamento_notas?: string | null;       // Notas do encaminhamento
   criado_em: string;
   atualizado_em: string;
   historico?: DenunciaHistorico[];
+  evidencias?: DenunciaEvidencia[];
+  triagem?: DenunciaTriagem | null;
+}
+
+export interface DenunciaEvidencia {
+  id: string;
+  denuncia_id: string;
+  s3_key: string;
+  tipo_mime: string;
+  tamanho_kb: number;
+  criado_em: string;
+  url?: string | null; // URL assinada temporária, gerada em runtime
 }
 
 export interface DenunciaHistorico {
@@ -85,4 +115,24 @@ export interface DenunciaHistorico {
   nota_interna?: string | null;
   operador_id: string;
   criado_em: string;
+}
+
+export interface DenunciaTriagem {
+  id: string;
+  denuncia_id: string;
+  operador_id: string;
+  categoria_confirmada: DenunciaTipo;
+  urgencia_confirmada: Urgencia;
+  encaminhamento?: EncaminhamentoTipo | null;
+  notas?: string | null;
+  criado_em: string;
+}
+
+export interface DenunciaStats {
+  total: number;
+  por_status: Record<DenunciaStatus, number>;
+  por_urgencia: Record<Urgencia, number>;
+  sla_violacoes: number;       // Denúncias que já ultrapassaram o prazo SLA
+  envolve_menor: number;       // Total que envolvem menor
+  pendentes_triagem: number;   // Status RECEBIDA há mais de 1h
 }

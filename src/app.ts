@@ -22,12 +22,29 @@ const app: Express = express();
 // Trust proxy para garantir que o req.ip seja lido corretamente atrás do Nginx/Cloudflare
 app.set('trust proxy', 1);
 
+// Painel Admin — Arquivos estáticos (deve vir antes do helmet para inline scripts funcionarem)
+app.use('/admin', express.static(path.resolve(process.cwd(), 'public', 'admin')));
+
 // Configuração do Swagger
 const swaggerDocument = YAML.load(path.resolve(process.cwd(), 'swagger.yaml'));
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument));
 
 // Middlewares Globais
-app.use(helmet());
+// Helmet com CSP relaxada para o painel admin (permite inline scripts/styles e Google Fonts)
+app.use(
+  helmet({
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'", "'unsafe-inline'"],
+        styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
+        fontSrc: ["'self'", 'https://fonts.gstatic.com'],
+        imgSrc: ["'self'", 'data:', 'https:'],
+        connectSrc: ["'self'"],
+      },
+    },
+  })
+);
 
 const allowedOrigins = process.env.CORS_ORIGIN
   ? process.env.CORS_ORIGIN.split(',').map((o) => o.trim())

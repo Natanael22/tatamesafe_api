@@ -1,0 +1,1330 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TatameSafe — Painel de Denúncias</title>
+  <meta name="description" content="Painel administrativo para triagem e atendimento de denúncias do TatameSafe." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+  <style>
+    /* ── Reset & Base ──────────────────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg:          #0c0e1a;
+      --surface:     #13162b;
+      --surface2:    #1c2040;
+      --border:      rgba(255,255,255,.07);
+      --border-glow: rgba(99,102,241,.4);
+      --text:        #e8eaf6;
+      --muted:       #6b7280;
+      --accent:      #6366f1;
+      --accent2:     #818cf8;
+      --green:       #22c55e;
+      --yellow:      #f59e0b;
+      --orange:      #f97316;
+      --red:         #ef4444;
+      --red-dark:    #b91c1c;
+      --radius:      12px;
+      --shadow:      0 8px 32px rgba(0,0,0,.5);
+      --transition:  .2s cubic-bezier(.4,0,.2,1);
+    }
+    html { font-family: 'Inter', sans-serif; font-size: 14px; }
+    body { background: var(--bg); color: var(--text); min-height: 100vh; overflow-x: hidden; }
+    a { color: var(--accent2); text-decoration: none; }
+    button { cursor: pointer; font-family: inherit; }
+    input, select, textarea { font-family: inherit; }
+
+    /* ── Scrollbar ─────────────────────────────────────────────────────────── */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: var(--surface); }
+    ::-webkit-scrollbar-thumb { background: var(--surface2); border-radius: 3px; }
+
+    /* ── Utility ───────────────────────────────────────────────────────────── */
+    .hidden { display: none !important; }
+    .flex { display: flex; }
+    .gap-2 { gap: 8px; }
+    .gap-3 { gap: 12px; }
+    .gap-4 { gap: 16px; }
+    .items-center { align-items: center; }
+    .justify-between { justify-content: space-between; }
+    .flex-1 { flex: 1; }
+    .w-full { width: 100%; }
+    .text-sm { font-size: .8125rem; }
+    .text-xs { font-size: .75rem; }
+    .font-semibold { font-weight: 600; }
+    .font-medium { font-weight: 500; }
+    .text-muted { color: var(--muted); }
+
+    /* ── Badge ─────────────────────────────────────────────────────────────── */
+    .badge {
+      display: inline-flex; align-items: center; gap: 4px;
+      padding: 3px 10px; border-radius: 99px;
+      font-size: .7rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+    }
+    .badge-CRITICA   { background: rgba(239,68,68,.2);  color: #fca5a5; border: 1px solid rgba(239,68,68,.4); }
+    .badge-ALTA      { background: rgba(249,115,22,.2); color: #fdba74; border: 1px solid rgba(249,115,22,.4); }
+    .badge-MEDIA     { background: rgba(245,158,11,.2); color: #fcd34d; border: 1px solid rgba(245,158,11,.4); }
+    .badge-BAIXA     { background: rgba(99,102,241,.15); color: #a5b4fc; border: 1px solid rgba(99,102,241,.3); }
+    .badge-RECEBIDA  { background: rgba(99,102,241,.15); color: #a5b4fc; border: 1px solid rgba(99,102,241,.3); }
+    .badge-TRIAGEM   { background: rgba(245,158,11,.2); color: #fcd34d; border: 1px solid rgba(245,158,11,.4); }
+    .badge-EM_APURACAO { background: rgba(249,115,22,.2); color: #fdba74; border: 1px solid rgba(249,115,22,.4); }
+    .badge-ENCERRADA { background: rgba(34,197,94,.15); color: #86efac; border: 1px solid rgba(34,197,94,.3); }
+    .badge-sla-OK      { background: rgba(34,197,94,.15); color: #86efac; border: 1px solid rgba(34,197,94,.3); }
+    .badge-sla-ATENCAO { background: rgba(245,158,11,.2); color: #fcd34d; border: 1px solid rgba(245,158,11,.4); }
+    .badge-sla-VIOLADO { background: rgba(239,68,68,.2);  color: #fca5a5; border: 1px solid rgba(239,68,68,.4); }
+    .badge-sla-ENCERRADA { background: rgba(107,114,128,.2); color: #9ca3af; border: 1px solid rgba(107,114,128,.4); }
+
+    /* ── Btn ───────────────────────────────────────────────────────────────── */
+    .btn {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 8px 16px; border-radius: 8px; border: none;
+      font-size: .8125rem; font-weight: 600; transition: var(--transition);
+    }
+    .btn-primary { background: var(--accent); color: #fff; }
+    .btn-primary:hover { background: #4f52d9; transform: translateY(-1px); box-shadow: 0 4px 16px rgba(99,102,241,.4); }
+    .btn-ghost { background: transparent; color: var(--text); border: 1px solid var(--border); }
+    .btn-ghost:hover { background: var(--surface2); border-color: var(--accent); }
+    .btn-danger { background: rgba(239,68,68,.15); color: #fca5a5; border: 1px solid rgba(239,68,68,.3); }
+    .btn-danger:hover { background: rgba(239,68,68,.25); }
+    .btn-success { background: rgba(34,197,94,.15); color: #86efac; border: 1px solid rgba(34,197,94,.3); }
+    .btn-success:hover { background: rgba(34,197,94,.25); }
+    .btn-sm { padding: 5px 12px; font-size: .75rem; }
+    .btn:disabled { opacity: .4; cursor: not-allowed; transform: none !important; }
+
+    /* ── Input ─────────────────────────────────────────────────────────────── */
+    .field { display: flex; flex-direction: column; gap: 6px; }
+    .field label { font-size: .8rem; font-weight: 500; color: #94a3b8; }
+    .input {
+      background: var(--bg); border: 1px solid var(--border);
+      border-radius: 8px; padding: 9px 12px; color: var(--text);
+      font-size: .875rem; transition: var(--transition); width: 100%;
+    }
+    .input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(99,102,241,.2); }
+    .input::placeholder { color: var(--muted); }
+    select.input option { background: var(--surface); }
+
+    /* ── ════════════════════════════ LOGIN ════════════════════════════ ───── */
+    #login-screen {
+      min-height: 100vh; display: flex; align-items: center; justify-content: center;
+      background: radial-gradient(ellipse at 50% 0%, rgba(99,102,241,.18) 0%, transparent 70%), var(--bg);
+    }
+    .login-card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 20px; padding: 48px 40px; width: 100%; max-width: 420px;
+      box-shadow: var(--shadow), 0 0 80px rgba(99,102,241,.12);
+      animation: fadeInUp .5s ease;
+    }
+    .login-logo {
+      display: flex; align-items: center; gap: 12px; margin-bottom: 32px;
+    }
+    .login-logo .logo-icon {
+      width: 44px; height: 44px; border-radius: 12px;
+      background: linear-gradient(135deg, var(--accent), #a855f7);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 20px; box-shadow: 0 4px 16px rgba(99,102,241,.4);
+    }
+    .login-logo h1 { font-size: 1.3rem; font-weight: 800; letter-spacing: -.03em; }
+    .login-logo span { display: block; font-size: .7rem; color: var(--muted); font-weight: 400; margin-top: 2px; }
+    .login-card h2 { font-size: 1.1rem; font-weight: 700; margin-bottom: 6px; }
+    .login-card p { color: var(--muted); font-size: .85rem; margin-bottom: 28px; }
+    .login-fields { display: flex; flex-direction: column; gap: 16px; }
+    .login-error {
+      background: rgba(239,68,68,.12); border: 1px solid rgba(239,68,68,.3);
+      border-radius: 8px; padding: 10px 14px; color: #fca5a5; font-size: .82rem;
+      display: none; margin-top: 12px;
+    }
+    .login-error.show { display: block; }
+
+    /* ── ════════════════════════════ LAYOUT ═══════════════════════════ ───── */
+    #app { display: none; min-height: 100vh; }
+    #app.visible { display: flex; flex-direction: column; }
+
+    /* Header */
+    .header {
+      background: var(--surface); border-bottom: 1px solid var(--border);
+      padding: 0 24px; height: 60px; display: flex; align-items: center;
+      justify-content: space-between; position: sticky; top: 0; z-index: 100;
+      backdrop-filter: blur(12px);
+    }
+    .header-left { display: flex; align-items: center; gap: 16px; }
+    .header-logo {
+      display: flex; align-items: center; gap: 10px;
+      font-weight: 800; font-size: .95rem; letter-spacing: -.02em;
+    }
+    .header-logo .logo-icon {
+      width: 32px; height: 32px; border-radius: 8px;
+      background: linear-gradient(135deg, var(--accent), #a855f7);
+      display: flex; align-items: center; justify-content: center; font-size: 14px;
+    }
+    .header-logo .badge-admin {
+      background: rgba(239,68,68,.2); color: #fca5a5;
+      border: 1px solid rgba(239,68,68,.3);
+      font-size: .65rem; font-weight: 700; padding: 2px 8px;
+      border-radius: 99px; letter-spacing: .05em;
+    }
+    .header-right { display: flex; align-items: center; gap: 12px; }
+    .user-chip {
+      display: flex; align-items: center; gap: 8px;
+      background: var(--surface2); border: 1px solid var(--border);
+      border-radius: 99px; padding: 4px 14px 4px 6px;
+    }
+    .user-avatar {
+      width: 26px; height: 26px; border-radius: 50%;
+      background: linear-gradient(135deg, var(--accent), #a855f7);
+      display: flex; align-items: center; justify-content: center;
+      font-size: .75rem; font-weight: 700;
+    }
+    .user-chip span { font-size: .8rem; font-weight: 500; }
+
+    /* Main */
+    .main { flex: 1; padding: 24px; max-width: 1400px; margin: 0 auto; width: 100%; }
+
+    /* Stats */
+    .stats-grid {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 16px; margin-bottom: 24px;
+    }
+    .stat-card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 20px; cursor: pointer;
+      transition: var(--transition); position: relative; overflow: hidden;
+    }
+    .stat-card::before {
+      content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px;
+      background: var(--accent-color, var(--accent));
+    }
+    .stat-card:hover { border-color: var(--accent); transform: translateY(-2px); box-shadow: var(--shadow); }
+    .stat-card .stat-icon { font-size: 1.5rem; margin-bottom: 12px; }
+    .stat-card .stat-value { font-size: 2rem; font-weight: 800; line-height: 1; }
+    .stat-card .stat-label { font-size: .75rem; color: var(--muted); margin-top: 4px; font-weight: 500; }
+    .stat-card .stat-sub { font-size: .7rem; color: var(--muted); margin-top: 2px; }
+
+    /* Filter bar */
+    .filter-bar {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 16px; margin-bottom: 16px;
+      display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end;
+    }
+    .filter-bar .field { min-width: 140px; }
+
+    /* Tabs */
+    .tabs { display: flex; gap: 4px; margin-bottom: 16px; }
+    .tab {
+      padding: 7px 16px; border-radius: 8px; border: 1px solid transparent;
+      font-size: .82rem; font-weight: 600; color: var(--muted);
+      background: transparent; cursor: pointer; transition: var(--transition);
+    }
+    .tab.active { background: var(--surface); border-color: var(--border); color: var(--text); }
+    .tab:hover:not(.active) { color: var(--text); }
+
+    /* Complaint cards */
+    .complaints-list { display: flex; flex-direction: column; gap: 12px; }
+    .complaint-card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 18px 20px;
+      transition: var(--transition); cursor: pointer;
+      display: grid; grid-template-columns: 1fr auto; gap: 16px; align-items: start;
+      animation: fadeInUp .3s ease;
+    }
+    .complaint-card:hover { border-color: rgba(99,102,241,.4); box-shadow: 0 4px 24px rgba(0,0,0,.3); }
+    .complaint-card.urgency-CRITICA { border-left: 3px solid var(--red); }
+    .complaint-card.urgency-ALTA    { border-left: 3px solid var(--orange); }
+    .complaint-card.urgency-MEDIA   { border-left: 3px solid var(--yellow); }
+    .complaint-card.urgency-BAIXA   { border-left: 3px solid var(--accent); }
+    .card-top { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+    .card-protocolo {
+      font-size: .85rem; font-weight: 700; color: var(--accent2);
+      font-family: 'Courier New', monospace;
+    }
+    .card-meta { display: flex; gap: 12px; flex-wrap: wrap; color: var(--muted); font-size: .78rem; }
+    .card-meta span { display: flex; align-items: center; gap: 4px; }
+    .card-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+    .sla-countdown {
+      font-size: .72rem; font-weight: 700; padding: 3px 8px; border-radius: 6px;
+    }
+    .sla-OK      { background: rgba(34,197,94,.1);  color: #86efac; }
+    .sla-ATENCAO { background: rgba(245,158,11,.15); color: #fcd34d; }
+    .sla-VIOLADO { background: rgba(239,68,68,.15);  color: #fca5a5; }
+    .sla-ENCERRADA { background: rgba(107,114,128,.15); color: #9ca3af; }
+    .minor-badge {
+      background: rgba(239,68,68,.15); color: #fca5a5;
+      border: 1px solid rgba(239,68,68,.3);
+      font-size: .65rem; font-weight: 700; padding: 2px 8px; border-radius: 99px;
+    }
+
+    /* Empty state */
+    .empty {
+      text-align: center; padding: 60px 20px;
+      color: var(--muted); font-size: .9rem;
+    }
+    .empty .empty-icon { font-size: 3rem; margin-bottom: 12px; opacity: .4; }
+
+    /* Loading */
+    .loading {
+      display: flex; align-items: center; justify-content: center;
+      gap: 10px; padding: 40px; color: var(--muted);
+    }
+    .spinner {
+      width: 20px; height: 20px; border: 2px solid var(--border);
+      border-top-color: var(--accent); border-radius: 50%;
+      animation: spin .7s linear infinite;
+    }
+
+    /* Pagination */
+    .pagination { display: flex; align-items: center; gap: 8px; justify-content: center; margin-top: 20px; }
+    .pagination-info { color: var(--muted); font-size: .8rem; }
+
+    /* ── ════════════════════════════ MODAL ════════════════════════════ ───── */
+    .modal-overlay {
+      position: fixed; inset: 0; z-index: 500;
+      background: rgba(0,0,0,.7); backdrop-filter: blur(6px);
+      display: flex; align-items: center; justify-content: center;
+      padding: 20px; animation: fadeIn .2s ease;
+    }
+    .modal {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 20px; width: 100%; max-width: 620px;
+      max-height: 90vh; overflow-y: auto;
+      box-shadow: var(--shadow), 0 0 0 1px rgba(99,102,241,.2);
+      animation: slideUp .3s cubic-bezier(.4,0,.2,1);
+    }
+    .modal-lg { max-width: 800px; }
+    .modal-header {
+      padding: 24px 28px 20px; border-bottom: 1px solid var(--border);
+      display: flex; justify-content: space-between; align-items: flex-start;
+      position: sticky; top: 0; background: var(--surface); z-index: 1; border-radius: 20px 20px 0 0;
+    }
+    .modal-header h2 { font-size: 1.1rem; font-weight: 700; }
+    .modal-header p { font-size: .82rem; color: var(--muted); margin-top: 4px; }
+    .close-btn {
+      background: var(--surface2); border: 1px solid var(--border);
+      width: 32px; height: 32px; border-radius: 8px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1rem; color: var(--muted); transition: var(--transition); flex-shrink: 0;
+    }
+    .close-btn:hover { color: var(--text); border-color: var(--accent); }
+    .modal-body { padding: 24px 28px; }
+    .modal-footer {
+      padding: 16px 28px 24px;
+      display: flex; justify-content: flex-end; gap: 10px;
+      border-top: 1px solid var(--border);
+    }
+
+    /* Detail sections */
+    .detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 20px; }
+    .detail-item { background: var(--surface2); border-radius: 8px; padding: 12px 14px; }
+    .detail-item .label { font-size: .72rem; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .06em; margin-bottom: 6px; }
+    .detail-item .value { font-size: .9rem; font-weight: 500; }
+    .section-title {
+      font-size: .78rem; color: var(--muted); font-weight: 700;
+      text-transform: uppercase; letter-spacing: .08em;
+      margin: 20px 0 10px; display: flex; align-items: center; gap: 8px;
+    }
+    .section-title::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+    .history-item {
+      display: flex; gap: 12px; padding: 10px 0;
+      border-bottom: 1px solid var(--border);
+    }
+    .history-item:last-child { border-bottom: none; }
+    .history-dot {
+      width: 8px; height: 8px; border-radius: 50%; background: var(--accent);
+      flex-shrink: 0; margin-top: 5px;
+    }
+    .evidence-list { display: flex; flex-direction: column; gap: 8px; }
+    .evidence-item {
+      background: var(--surface2); border-radius: 8px; padding: 10px 14px;
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .evidence-item a { font-size: .8rem; color: var(--accent2); }
+
+    /* Alert box */
+    .alert {
+      border-radius: 8px; padding: 10px 14px; font-size: .82rem;
+      margin-bottom: 16px; display: flex; align-items: center; gap: 8px;
+    }
+    .alert-warning { background: rgba(245,158,11,.1); border: 1px solid rgba(245,158,11,.3); color: #fcd34d; }
+    .alert-error   { background: rgba(239,68,68,.1);  border: 1px solid rgba(239,68,68,.3);  color: #fca5a5; }
+    .alert-success { background: rgba(34,197,94,.1);  border: 1px solid rgba(34,197,94,.3);  color: #86efac; }
+
+    /* Toast */
+    #toast-container { position: fixed; bottom: 24px; right: 24px; z-index: 9999; display: flex; flex-direction: column; gap: 8px; }
+    .toast {
+      background: var(--surface2); border: 1px solid var(--border);
+      border-radius: 10px; padding: 12px 18px;
+      font-size: .84rem; font-weight: 500; min-width: 240px;
+      box-shadow: var(--shadow); animation: slideLeft .3s ease;
+      display: flex; align-items: center; gap: 8px;
+    }
+    .toast.success { border-color: rgba(34,197,94,.4); }
+    .toast.error   { border-color: rgba(239,68,68,.4); }
+
+    /* SLA Card highlight */
+    .sla-banner {
+      background: rgba(239,68,68,.08); border: 1px solid rgba(239,68,68,.25);
+      border-radius: 10px; padding: 12px 16px;
+      display: flex; align-items: center; gap: 10px; margin-bottom: 20px;
+    }
+    .sla-banner span { font-size: .85rem; font-weight: 600; color: #fca5a5; }
+
+    /* Animations */
+    @keyframes fadeInUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+    @keyframes fadeIn   { from { opacity: 0; } to { opacity: 1; } }
+    @keyframes slideUp  { from { opacity: 0; transform: translateY(30px); } to { opacity: 1; transform: translateY(0); } }
+    @keyframes slideLeft { from { opacity: 0; transform: translateX(20px); } to { opacity: 1; transform: translateX(0); } }
+    @keyframes spin     { to { transform: rotate(360deg); } }
+
+    /* Responsive */
+    @media (max-width: 768px) {
+      .stats-grid { grid-template-columns: repeat(2, 1fr); }
+      .detail-grid { grid-template-columns: 1fr; }
+      .filter-bar { flex-direction: column; }
+      .card-actions { flex-direction: column; }
+      .modal { border-radius: 14px; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ── LOGIN ──────────────────────────────────────────────────────────────── -->
+<div id="login-screen">
+  <div class="login-card">
+    <div class="login-logo">
+      <div class="logo-icon">🥋</div>
+      <div>
+        <h1>TatameSafe</h1>
+        <span>Painel Administrativo</span>
+      </div>
+    </div>
+    <h2>Acesso Restrito</h2>
+    <p>Somente administradores e operadores autorizados.</p>
+    <div class="login-fields">
+      <div class="field">
+        <label>E-mail</label>
+        <input id="login-email" type="email" class="input" placeholder="admin@tatamasafe.com.br" autocomplete="email" />
+      </div>
+      <div class="field">
+        <label>Senha</label>
+        <input id="login-password" type="password" class="input" placeholder="••••••••" autocomplete="current-password" />
+      </div>
+      <button id="login-btn" class="btn btn-primary w-full" style="margin-top:4px;justify-content:center;padding:12px;">
+        <span id="login-btn-text">Entrar no Painel</span>
+      </button>
+      <div id="login-error" class="login-error"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ── APP ────────────────────────────────────────────────────────────────── -->
+<div id="app">
+  <!-- Header -->
+  <header class="header">
+    <div class="header-left">
+      <div class="header-logo">
+        <div class="logo-icon">🥋</div>
+        TatameSafe
+        <span class="badge-admin">ADMIN</span>
+      </div>
+    </div>
+    <div class="header-right">
+      <div class="user-chip">
+        <div class="user-avatar" id="user-avatar">A</div>
+        <span id="user-name">Admin</span>
+      </div>
+      <button id="logout-btn" class="btn btn-ghost btn-sm">Sair</button>
+    </div>
+  </header>
+
+  <!-- Main -->
+  <main class="main">
+    <!-- Stats -->
+    <div id="stats-grid" class="stats-grid">
+      <div class="stat-card" style="--accent-color: var(--accent)" onclick="setFilter('status','')">
+        <div class="stat-icon">📋</div>
+        <div class="stat-value" id="stat-total">—</div>
+        <div class="stat-label">Total de Denúncias</div>
+      </div>
+      <div class="stat-card" style="--accent-color: var(--red)" onclick="setFilter('status','RECEBIDA')">
+        <div class="stat-icon">🔔</div>
+        <div class="stat-value" id="stat-recebida">—</div>
+        <div class="stat-label">Recebidas</div>
+        <div class="stat-sub" id="stat-pendentes"></div>
+      </div>
+      <div class="stat-card" style="--accent-color: var(--yellow)" onclick="setFilter('status','TRIAGEM')">
+        <div class="stat-icon">🔍</div>
+        <div class="stat-value" id="stat-triagem">—</div>
+        <div class="stat-label">Em Triagem</div>
+      </div>
+      <div class="stat-card" style="--accent-color: var(--orange)" onclick="setFilter('status','EM_APURACAO')">
+        <div class="stat-icon">⚖️</div>
+        <div class="stat-value" id="stat-apuracao">—</div>
+        <div class="stat-label">Em Apuração</div>
+      </div>
+      <div class="stat-card" style="--accent-color: var(--green)" onclick="setFilter('status','ENCERRADA')">
+        <div class="stat-icon">✅</div>
+        <div class="stat-value" id="stat-encerrada">—</div>
+        <div class="stat-label">Encerradas</div>
+      </div>
+      <div class="stat-card" style="--accent-color: var(--red)" onclick="loadSlaTab()">
+        <div class="stat-icon">⏰</div>
+        <div class="stat-value" id="stat-sla">—</div>
+        <div class="stat-label">SLA Violados</div>
+      </div>
+      <div class="stat-card" style="--accent-color: var(--red)" onclick="setFilter('envolve_menor','true')">
+        <div class="stat-icon">👶</div>
+        <div class="stat-value" id="stat-menor">—</div>
+        <div class="stat-label">Envolve Menor</div>
+      </div>
+      <div class="stat-card" style="--accent-color: var(--orange)" onclick="setFilter('urgencia','CRITICA')">
+        <div class="stat-icon">🚨</div>
+        <div class="stat-value" id="stat-critica">—</div>
+        <div class="stat-label">Urgência Crítica</div>
+      </div>
+    </div>
+
+    <!-- SLA banner -->
+    <div id="sla-banner" class="sla-banner hidden">
+      <span>⏰</span>
+      <span id="sla-banner-text">Há denúncias com SLA violado que precisam de atenção imediata!</span>
+      <button class="btn btn-danger btn-sm" onclick="loadSlaTab()" style="margin-left:auto">Ver SLA</button>
+    </div>
+
+    <!-- Tabs -->
+    <div class="tabs">
+      <button class="tab active" onclick="switchTab('all',this)">Todas</button>
+      <button class="tab" onclick="switchTab('sla',this)">⏰ SLA</button>
+      <button class="tab" onclick="switchTab('sem-operador',this)">Sem Operador</button>
+    </div>
+
+    <!-- Filter bar -->
+    <div id="filter-bar" class="filter-bar">
+      <div class="field">
+        <label>Status</label>
+        <select id="filter-status" class="input" onchange="applyFilters()">
+          <option value="">Todos</option>
+          <option value="RECEBIDA">Recebida</option>
+          <option value="TRIAGEM">Triagem</option>
+          <option value="EM_APURACAO">Em Apuração</option>
+          <option value="ENCERRADA">Encerrada</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Urgência</label>
+        <select id="filter-urgencia" class="input" onchange="applyFilters()">
+          <option value="">Todas</option>
+          <option value="CRITICA">🔴 Crítica</option>
+          <option value="ALTA">🟠 Alta</option>
+          <option value="MEDIA">🟡 Média</option>
+          <option value="BAIXA">🔵 Baixa</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Menor</label>
+        <select id="filter-menor" class="input" onchange="applyFilters()">
+          <option value="">Todos</option>
+          <option value="true">Envolve Menor</option>
+          <option value="false">Sem Menor</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>De</label>
+        <input type="date" id="filter-inicio" class="input" onchange="applyFilters()" />
+      </div>
+      <div class="field">
+        <label>Até</label>
+        <input type="date" id="filter-fim" class="input" onchange="applyFilters()" />
+      </div>
+      <button class="btn btn-ghost btn-sm" onclick="clearFilters()" style="align-self:flex-end">Limpar</button>
+      <button class="btn btn-primary btn-sm" onclick="loadComplaints()" style="align-self:flex-end">
+        🔄 Atualizar
+      </button>
+    </div>
+
+    <!-- List -->
+    <div id="complaints-container"></div>
+
+    <!-- Pagination -->
+    <div id="pagination" class="pagination hidden">
+      <button id="prev-btn" class="btn btn-ghost btn-sm" onclick="changePage(-1)">← Anterior</button>
+      <span id="pagination-info" class="pagination-info"></span>
+      <button id="next-btn" class="btn btn-ghost btn-sm" onclick="changePage(1)">Próxima →</button>
+    </div>
+  </main>
+</div>
+
+<!-- ── MODAL: Detalhe da Denúncia ─────────────────────────────────────────── -->
+<div id="modal-detail" class="modal-overlay hidden">
+  <div class="modal modal-lg">
+    <div class="modal-header">
+      <div>
+        <h2>Denúncia <span id="detail-protocolo" style="color:var(--accent2);font-family:'Courier New',monospace"></span></h2>
+        <p>Histórico completo, evidências e ações disponíveis</p>
+      </div>
+      <button class="close-btn" onclick="closeModal('modal-detail')">✕</button>
+    </div>
+    <div class="modal-body" id="detail-body"></div>
+    <div class="modal-footer" id="detail-footer"></div>
+  </div>
+</div>
+
+<!-- ── MODAL: Triagem ─────────────────────────────────────────────────────── -->
+<div id="modal-triagem" class="modal-overlay hidden">
+  <div class="modal">
+    <div class="modal-header">
+      <div>
+        <h2>🔍 Triagem Formal</h2>
+        <p>Confirme categoria, urgência e adicione notas de análise.</p>
+      </div>
+      <button class="close-btn" onclick="closeModal('modal-triagem')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="alert alert-warning">
+        ⚠️ A triagem só pode ser realizada <strong>uma vez</strong>. Após registrada, use "Atualizar Status".
+      </div>
+      <div style="display:flex;flex-direction:column;gap:16px;">
+        <div class="field">
+          <label>Categoria Confirmada *</label>
+          <select id="triagem-categoria" class="input">
+            <option value="">Selecione...</option>
+            <option value="ASSEDIO_SEXUAL">Assédio Sexual</option>
+            <option value="ASSEDIO_MORAL">Assédio Moral</option>
+            <option value="VIOLENCIA">Violência</option>
+            <option value="OUTRO">Outro</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Urgência Confirmada *</label>
+          <select id="triagem-urgencia" class="input">
+            <option value="">Selecione...</option>
+            <option value="CRITICA">🔴 Crítica (2h)</option>
+            <option value="ALTA">🟠 Alta (8h)</option>
+            <option value="MEDIA">🟡 Média (24h)</option>
+            <option value="BAIXA">🔵 Baixa (72h)</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Notas de Triagem</label>
+          <textarea id="triagem-notas" class="input" rows="4" placeholder="Observações internas sobre a análise..."></textarea>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-triagem')">Cancelar</button>
+      <button id="triagem-submit" class="btn btn-primary" onclick="submitTriagem()">✓ Confirmar Triagem</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── MODAL: Encaminhar ──────────────────────────────────────────────────── -->
+<div id="modal-encaminhar" class="modal-overlay hidden">
+  <div class="modal">
+    <div class="modal-header">
+      <div>
+        <h2>⚖️ Encaminhar Denúncia</h2>
+        <p>Selecione a entidade e adicione informações do encaminhamento.</p>
+      </div>
+      <button class="close-btn" onclick="closeModal('modal-encaminhar')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div style="display:flex;flex-direction:column;gap:16px;">
+        <div class="field">
+          <label>Encaminhar Para *</label>
+          <select id="encam-destino" class="input">
+            <option value="">Selecione...</option>
+            <option value="CONSELHO_TUTELAR">👶 Conselho Tutelar</option>
+            <option value="DELEGACIA">🚔 Delegacia</option>
+            <option value="PSICOLOGO">🧠 Psicólogo</option>
+            <option value="MINISTERIO_PUBLICO">⚖️ Ministério Público</option>
+            <option value="OUTRO">📋 Outro Órgão</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Notas do Encaminhamento</label>
+          <textarea id="encam-notas" class="input" rows="4" placeholder="Nº BO, contatos, observações para o próximo atendente..."></textarea>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-encaminhar')">Cancelar</button>
+      <button id="encam-submit" class="btn btn-primary" onclick="submitEncaminhar()">⚖️ Confirmar Encaminhamento</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── MODAL: Atualizar Status ────────────────────────────────────────────── -->
+<div id="modal-status" class="modal-overlay hidden">
+  <div class="modal">
+    <div class="modal-header">
+      <div>
+        <h2>🔄 Atualizar Status</h2>
+        <p>Altere o status e adicione uma nota interna.</p>
+      </div>
+      <button class="close-btn" onclick="closeModal('modal-status')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div style="display:flex;flex-direction:column;gap:16px;">
+        <div class="field">
+          <label>Novo Status *</label>
+          <select id="status-novo" class="input">
+            <option value="RECEBIDA">🔔 Recebida</option>
+            <option value="TRIAGEM">🔍 Triagem</option>
+            <option value="EM_APURACAO">⚖️ Em Apuração</option>
+            <option value="ENCERRADA">✅ Encerrada</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Nota Interna</label>
+          <textarea id="status-nota" class="input" rows="3" placeholder="Observações internas (não visível ao denunciante)..."></textarea>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-status')">Cancelar</button>
+      <button id="status-submit" class="btn btn-primary" onclick="submitStatus()">✓ Atualizar Status</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Toast container ─────────────────────────────────────────────────────── -->
+<div id="toast-container"></div>
+
+<script>
+// ════════════════════════════════════════════════════════════════════════════
+// CONFIG
+// ════════════════════════════════════════════════════════════════════════════
+const API = window.location.origin + '/api/v1';
+let token = localStorage.getItem('ts_admin_token') || null;
+let currentUser = null;
+let currentTab = 'all';
+let currentPage = 0;
+const PAGE_SIZE = 20;
+let totalComplaints = 0;
+let activeComplaintId = null;
+
+// ════════════════════════════════════════════════════════════════════════════
+// INIT
+// ════════════════════════════════════════════════════════════════════════════
+window.addEventListener('DOMContentLoaded', async () => {
+  if (token) {
+    try {
+      const me = await apiFetch('/users/me');
+      if (me && me.tipo === 'ADMIN') {
+        currentUser = me;
+        showApp();
+        return;
+      }
+    } catch {}
+    token = null;
+    localStorage.removeItem('ts_admin_token');
+  }
+
+  // Keyboard enter on login
+  document.getElementById('login-password').addEventListener('keydown', e => {
+    if (e.key === 'Enter') login();
+  });
+  document.getElementById('login-email').addEventListener('keydown', e => {
+    if (e.key === 'Enter') document.getElementById('login-password').focus();
+  });
+  document.getElementById('login-btn').addEventListener('click', login);
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// AUTH
+// ════════════════════════════════════════════════════════════════════════════
+async function login() {
+  const email = document.getElementById('login-email').value.trim();
+  const password = document.getElementById('login-password').value;
+  const errEl = document.getElementById('login-error');
+  const btn = document.getElementById('login-btn');
+  const btnText = document.getElementById('login-btn-text');
+
+  errEl.classList.remove('show');
+  if (!email || !password) { showLoginError('Informe e-mail e senha.'); return; }
+
+  btn.disabled = true;
+  btnText.textContent = 'Autenticando...';
+
+  try {
+    const res = await fetch(`${API}/auth/signin`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password }),
+    });
+
+    const data = await res.json();
+    if (!res.ok) { showLoginError(data.error || 'Falha na autenticação.'); return; }
+    if (!data.session?.access_token) { showLoginError('Resposta inválida do servidor.'); return; }
+
+    token = data.session.access_token;
+    currentUser = data.user;
+
+    if (!currentUser || currentUser.tipo !== 'ADMIN') {
+      token = null;
+      showLoginError('Acesso negado. Somente administradores podem acessar este painel.');
+      return;
+    }
+
+    localStorage.setItem('ts_admin_token', token);
+    showApp();
+  } catch (err) {
+    showLoginError('Erro de conexão com o servidor.');
+  } finally {
+    btn.disabled = false;
+    btnText.textContent = 'Entrar no Painel';
+  }
+}
+
+function showLoginError(msg) {
+  const el = document.getElementById('login-error');
+  el.textContent = msg;
+  el.classList.add('show');
+}
+
+function logout() {
+  token = null;
+  currentUser = null;
+  localStorage.removeItem('ts_admin_token');
+  document.getElementById('app').classList.remove('visible');
+  document.getElementById('app').style.display = 'none';
+  document.getElementById('login-screen').style.display = 'flex';
+  document.getElementById('login-password').value = '';
+  document.getElementById('login-error').classList.remove('show');
+}
+
+document.getElementById('logout-btn').addEventListener('click', logout);
+
+// ════════════════════════════════════════════════════════════════════════════
+// APP INIT
+// ════════════════════════════════════════════════════════════════════════════
+function showApp() {
+  document.getElementById('login-screen').style.display = 'none';
+  const app = document.getElementById('app');
+  app.style.display = 'flex';
+  app.classList.add('visible');
+
+  // Set user info
+  const name = currentUser?.nome || currentUser?.email || 'Admin';
+  document.getElementById('user-name').textContent = name;
+  document.getElementById('user-avatar').textContent = name[0].toUpperCase();
+
+  loadStats();
+  loadComplaints();
+
+  // Auto-refresh stats every 60s
+  setInterval(() => { loadStats(); }, 60000);
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// API HELPER
+// ════════════════════════════════════════════════════════════════════════════
+async function apiFetch(path, options = {}) {
+  const res = await fetch(`${API}${path}`, {
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+      ...(options.headers || {}),
+    },
+  });
+
+  if (res.status === 401) { logout(); throw new Error('Não autenticado'); }
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || `Erro ${res.status}`);
+  }
+  return res.json();
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// STATS
+// ════════════════════════════════════════════════════════════════════════════
+async function loadStats() {
+  try {
+    const stats = await apiFetch('/denuncia/admin/stats');
+
+    document.getElementById('stat-total').textContent = stats.total ?? 0;
+    document.getElementById('stat-recebida').textContent = stats.por_status?.RECEBIDA ?? 0;
+    document.getElementById('stat-triagem').textContent = stats.por_status?.TRIAGEM ?? 0;
+    document.getElementById('stat-apuracao').textContent = stats.por_status?.EM_APURACAO ?? 0;
+    document.getElementById('stat-encerrada').textContent = stats.por_status?.ENCERRADA ?? 0;
+    document.getElementById('stat-sla').textContent = stats.sla_violacoes ?? 0;
+    document.getElementById('stat-menor').textContent = stats.envolve_menor ?? 0;
+    document.getElementById('stat-critica').textContent = stats.por_urgencia?.CRITICA ?? 0;
+
+    if (stats.pendentes_triagem > 0) {
+      document.getElementById('stat-pendentes').textContent = `${stats.pendentes_triagem} aguardando triagem`;
+    }
+
+    // SLA banner
+    if ((stats.sla_violacoes ?? 0) > 0) {
+      const banner = document.getElementById('sla-banner');
+      document.getElementById('sla-banner-text').textContent =
+        `⚠️ ${stats.sla_violacoes} denúncia(s) com SLA violado precisam de atenção imediata!`;
+      banner.classList.remove('hidden');
+    }
+  } catch (err) {
+    console.error('Erro ao carregar stats:', err);
+  }
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// COMPLAINTS LIST
+// ════════════════════════════════════════════════════════════════════════════
+function buildQueryParams() {
+  const params = new URLSearchParams();
+  params.set('limit', PAGE_SIZE);
+  params.set('offset', currentPage * PAGE_SIZE);
+
+  const status = document.getElementById('filter-status').value;
+  const urgencia = document.getElementById('filter-urgencia').value;
+  const menor = document.getElementById('filter-menor').value;
+  const inicio = document.getElementById('filter-inicio').value;
+  const fim = document.getElementById('filter-fim').value;
+
+  if (status) params.set('status', status);
+  if (urgencia) params.set('urgencia', urgencia);
+  if (menor) params.set('envolve_menor', menor);
+  if (inicio) params.set('data_inicio', new Date(inicio).toISOString());
+  if (fim) params.set('data_fim', new Date(fim + 'T23:59:59').toISOString());
+  if (currentTab === 'sem-operador') params.set('sem_operador', 'true');
+
+  return params.toString();
+}
+
+async function loadComplaints() {
+  const container = document.getElementById('complaints-container');
+  container.innerHTML = `<div class="loading"><div class="spinner"></div> Carregando denúncias...</div>`;
+
+  try {
+    let data, list;
+
+    if (currentTab === 'sla') {
+      data = await apiFetch('/denuncia/admin/sla');
+      list = data;
+      totalComplaints = list.length;
+    } else {
+      const qs = buildQueryParams();
+      data = await apiFetch(`/denuncia/admin?${qs}`);
+      list = data.data || [];
+      totalComplaints = data.total || list.length;
+    }
+
+    renderComplaints(list);
+    updatePagination();
+  } catch (err) {
+    container.innerHTML = `
+      <div class="empty">
+        <div class="empty-icon">⚠️</div>
+        Erro ao carregar: ${escHtml(err.message)}
+        <br><br>
+        <button class="btn btn-ghost" onclick="loadComplaints()">Tentar novamente</button>
+      </div>`;
+  }
+}
+
+function renderComplaints(list) {
+  const container = document.getElementById('complaints-container');
+  if (!list.length) {
+    container.innerHTML = `
+      <div class="empty">
+        <div class="empty-icon">📭</div>
+        Nenhuma denúncia encontrada com os filtros selecionados.
+      </div>`;
+    return;
+  }
+
+  container.innerHTML = `<div class="complaints-list">${list.map(renderCard).join('')}</div>`;
+}
+
+function renderCard(d) {
+  const sla = d.sla_status || 'OK';
+  const horasInfo = sla === 'VIOLADO'
+    ? `${Math.abs(d.horas_restantes || 0)}h atrasada`
+    : sla === 'ATENCAO'
+      ? `${d.horas_restantes}h restantes`
+      : sla === 'OK'
+        ? `${d.horas_restantes}h restantes`
+        : '';
+
+  const slaBadge = sla !== 'ENCERRADA' && d.sla_limite_horas
+    ? `<span class="sla-countdown sla-${sla}">⏰ ${horasInfo}</span>`
+    : '';
+
+  const minorBadge = d.envolve_menor ? `<span class="minor-badge">👶 Menor</span>` : '';
+
+  const tipo = {
+    ASSEDIO_SEXUAL: 'Assédio Sexual',
+    ASSEDIO_MORAL: 'Assédio Moral',
+    VIOLENCIA: 'Violência',
+    OUTRO: 'Outro',
+  }[d.tipo] || d.tipo;
+
+  const dataCriacao = formatDate(d.criado_em);
+
+  return `
+    <div class="complaint-card urgency-${d.urgencia}" onclick="openDetail('${d.id}')">
+      <div>
+        <div class="card-top">
+          <span class="card-protocolo">${escHtml(d.protocolo)}</span>
+          <span class="badge badge-${d.urgencia}">${d.urgencia}</span>
+          <span class="badge badge-${d.status}">${statusLabel(d.status)}</span>
+          ${minorBadge}
+          ${slaBadge}
+          ${d.operador_id ? '<span class="badge" style="background:rgba(99,102,241,.15);color:#a5b4fc;border:1px solid rgba(99,102,241,.3)">👤 Atribuída</span>' : '<span class="badge" style="background:rgba(107,114,128,.15);color:#9ca3af;border:1px solid rgba(107,114,128,.3)">Sem operador</span>'}
+        </div>
+        <div class="card-meta">
+          <span>📁 ${escHtml(tipo)}</span>
+          <span>🕐 ${dataCriacao}</span>
+          ${d.academia_ref ? `<span>🏫 Academia referenciada</span>` : ''}
+          ${d.encaminhamento ? `<span>➡️ ${encamLabel(d.encaminhamento)}</span>` : ''}
+        </div>
+      </div>
+      <div class="card-actions" onclick="event.stopPropagation()">
+        <button class="btn btn-ghost btn-sm" onclick="openDetail('${d.id}')">🔎 Ver</button>
+        ${d.status !== 'ENCERRADA' ? `<button class="btn btn-ghost btn-sm" onclick="assumir('${d.id}')">👤 Assumir</button>` : ''}
+        ${!d.triagem && d.status === 'RECEBIDA' ? `<button class="btn btn-primary btn-sm" onclick="openTriagem('${d.id}')">🔍 Triagem</button>` : ''}
+        ${d.status === 'TRIAGEM' ? `<button class="btn btn-primary btn-sm" onclick="openEncaminhar('${d.id}')">⚖️ Encaminhar</button>` : ''}
+        ${d.status !== 'ENCERRADA' ? `<button class="btn btn-ghost btn-sm" onclick="openStatus('${d.id}',\`${d.status}\`)">🔄 Status</button>` : ''}
+      </div>
+    </div>`;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// DETAIL MODAL
+// ════════════════════════════════════════════════════════════════════════════
+async function openDetail(id) {
+  activeComplaintId = id;
+  document.getElementById('modal-detail').classList.remove('hidden');
+  document.getElementById('detail-protocolo').textContent = '...';
+  document.getElementById('detail-body').innerHTML = `<div class="loading"><div class="spinner"></div> Carregando...</div>`;
+  document.getElementById('detail-footer').innerHTML = '';
+
+  try {
+    const d = await apiFetch(`/denuncia/admin/${id}`);
+    document.getElementById('detail-protocolo').textContent = d.protocolo;
+
+    const tipo = {
+      ASSEDIO_SEXUAL: 'Assédio Sexual',
+      ASSEDIO_MORAL: 'Assédio Moral',
+      VIOLENCIA: 'Violência',
+      OUTRO: 'Outro',
+    }[d.tipo] || d.tipo;
+
+    const sla = d.sla_status || '—';
+    const horasInfo = d.horas_em_aberto != null ? `${d.horas_em_aberto}h em aberto` : '—';
+
+    let html = `
+      <div class="detail-grid">
+        <div class="detail-item"><div class="label">Protocolo</div><div class="value" style="font-family:'Courier New',monospace;color:var(--accent2)">${escHtml(d.protocolo)}</div></div>
+        <div class="detail-item"><div class="label">Status</div><div class="value"><span class="badge badge-${d.status}">${statusLabel(d.status)}</span></div></div>
+        <div class="detail-item"><div class="label">Urgência</div><div class="value"><span class="badge badge-${d.urgencia}">${d.urgencia}</span></div></div>
+        <div class="detail-item"><div class="label">Tipo</div><div class="value">${escHtml(tipo)}</div></div>
+        <div class="detail-item"><div class="label">Envolve Menor</div><div class="value">${d.envolve_menor ? '⚠️ Sim' : 'Não'}</div></div>
+        <div class="detail-item"><div class="label">SLA</div><div class="value"><span class="badge badge-sla-${sla}">${sla}</span> <span class="text-muted text-xs">${horasInfo}</span></div></div>
+        <div class="detail-item"><div class="label">Criado em</div><div class="value">${formatDate(d.criado_em)}</div></div>
+        <div class="detail-item"><div class="label">Atualizado em</div><div class="value">${formatDate(d.atualizado_em)}</div></div>
+        ${d.encaminhamento ? `<div class="detail-item" style="grid-column:1/-1"><div class="label">Encaminhamento</div><div class="value">➡️ ${encamLabel(d.encaminhamento)}${d.encaminhamento_notas ? ` — ${escHtml(d.encaminhamento_notas)}` : ''}</div></div>` : ''}
+      </div>
+      
+      <div class="section-title">Relato da Denúncia</div>
+      <div style="background:var(--surface2);border-radius:8px;padding:16px;font-size:.9rem;line-height:1.6;white-space:pre-wrap;color:var(--text);border:1px solid var(--border)">${d.descricao ? escHtml(d.descricao) : '<span class="text-muted italic">Nenhum relato disponível ou erro ao descriptografar.</span>'}</div>
+      `;
+
+    // Triagem
+    if (d.triagem) {
+      const tr = d.triagem;
+      html += `
+        <div class="section-title">Triagem Registrada</div>
+        <div class="detail-grid">
+          <div class="detail-item"><div class="label">Categoria Confirmada</div><div class="value">${escHtml(tr.categoria_confirmada)}</div></div>
+          <div class="detail-item"><div class="label">Urgência Confirmada</div><div class="value"><span class="badge badge-${tr.urgencia_confirmada}">${tr.urgencia_confirmada}</span></div></div>
+          ${tr.notas ? `<div class="detail-item" style="grid-column:1/-1"><div class="label">Notas</div><div class="value text-sm">${escHtml(tr.notas)}</div></div>` : ''}
+          <div class="detail-item"><div class="label">Data da Triagem</div><div class="value">${formatDate(tr.criado_em)}</div></div>
+        </div>`;
+    }
+
+    // Evidências
+    if (d.evidencias?.length) {
+      html += `<div class="section-title">Evidências (${d.evidencias.length})</div>
+        <div class="evidence-list">
+          ${d.evidencias.map(ev => `
+            <div class="evidence-item">
+              <div>
+                <span class="text-sm">${escHtml(ev.tipo_mime)}</span>
+                <span class="text-muted text-xs" style="margin-left:8px">${ev.tamanho_kb} KB</span>
+              </div>
+              ${ev.url ? `<a href="${ev.url}" target="_blank">📎 Abrir evidência</a>` : '<span class="text-muted text-xs">URL expirada</span>'}
+            </div>`).join('')}
+        </div>`;
+    }
+
+    // Histórico
+    if (d.historico?.length) {
+      html += `<div class="section-title">Histórico de Status (${d.historico.length})</div>`;
+      html += d.historico.slice().reverse().map(h => `
+        <div class="history-item">
+          <div class="history-dot"></div>
+          <div>
+            <div class="text-sm font-medium">
+              <span class="badge badge-${h.status_de}" style="font-size:.65rem">${statusLabel(h.status_de)}</span>
+              → <span class="badge badge-${h.status_para}" style="font-size:.65rem">${statusLabel(h.status_para)}</span>
+            </div>
+            ${h.nota_interna ? `<div class="text-xs text-muted" style="margin-top:4px">${escHtml(h.nota_interna)}</div>` : ''}
+            <div class="text-xs text-muted" style="margin-top:4px">${formatDate(h.criado_em)}</div>
+          </div>
+        </div>`).join('');
+    }
+
+    document.getElementById('detail-body').innerHTML = html;
+
+    // Footer actions
+    let actions = '';
+    if (d.status !== 'ENCERRADA') {
+      actions += `<button class="btn btn-ghost" onclick="assumir('${d.id}');closeModal('modal-detail')">👤 Assumir</button>`;
+      if (!d.triagem && d.status === 'RECEBIDA')
+        actions += `<button class="btn btn-primary" onclick="closeModal('modal-detail');openTriagem('${d.id}')">🔍 Triagem</button>`;
+      if (d.status === 'TRIAGEM')
+        actions += `<button class="btn btn-primary" onclick="closeModal('modal-detail');openEncaminhar('${d.id}')">⚖️ Encaminhar</button>`;
+      actions += `<button class="btn btn-ghost" onclick="closeModal('modal-detail');openStatus('${d.id}','${d.status}')">🔄 Atualizar Status</button>`;
+    }
+    document.getElementById('detail-footer').innerHTML = `<button class="btn btn-ghost" onclick="closeModal('modal-detail')">Fechar</button>${actions}`;
+  } catch (err) {
+    document.getElementById('detail-body').innerHTML = `<div class="alert alert-error">⚠️ ${escHtml(err.message)}</div>`;
+  }
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// ACTIONS
+// ════════════════════════════════════════════════════════════════════════════
+async function assumir(id) {
+  try {
+    await apiFetch(`/denuncia/admin/${id}/operador`, { method: 'PATCH' });
+    toast('✓ Denúncia atribuída a você', 'success');
+    loadComplaints();
+  } catch (err) { toast(err.message, 'error'); }
+}
+
+function openTriagem(id) {
+  activeComplaintId = id;
+  document.getElementById('triagem-categoria').value = '';
+  document.getElementById('triagem-urgencia').value = '';
+  document.getElementById('triagem-notas').value = '';
+  document.getElementById('modal-triagem').classList.remove('hidden');
+}
+
+async function submitTriagem() {
+  const cat = document.getElementById('triagem-categoria').value;
+  const urg = document.getElementById('triagem-urgencia').value;
+  const notas = document.getElementById('triagem-notas').value;
+
+  if (!cat || !urg) { toast('Selecione categoria e urgência', 'error'); return; }
+
+  const btn = document.getElementById('triagem-submit');
+  btn.disabled = true; btn.textContent = 'Registrando...';
+
+  try {
+    await apiFetch(`/denuncia/admin/${activeComplaintId}/triagem`, {
+      method: 'PATCH',
+      body: JSON.stringify({ categoria_confirmada: cat, urgencia_confirmada: urg, notas }),
+    });
+    toast('✓ Triagem realizada com sucesso!', 'success');
+    closeModal('modal-triagem');
+    loadStats();
+    loadComplaints();
+  } catch (err) {
+    toast(err.message, 'error');
+  } finally {
+    btn.disabled = false; btn.textContent = '✓ Confirmar Triagem';
+  }
+}
+
+function openEncaminhar(id) {
+  activeComplaintId = id;
+  document.getElementById('encam-destino').value = '';
+  document.getElementById('encam-notas').value = '';
+  document.getElementById('modal-encaminhar').classList.remove('hidden');
+}
+
+async function submitEncaminhar() {
+  const dest = document.getElementById('encam-destino').value;
+  const notas = document.getElementById('encam-notas').value;
+
+  if (!dest) { toast('Selecione o destino do encaminhamento', 'error'); return; }
+
+  const btn = document.getElementById('encam-submit');
+  btn.disabled = true; btn.textContent = 'Encaminhando...';
+
+  try {
+    await apiFetch(`/denuncia/admin/${activeComplaintId}/encaminhar`, {
+      method: 'PATCH',
+      body: JSON.stringify({ encaminhamento: dest, notas }),
+    });
+    toast('✓ Denúncia encaminhada com sucesso!', 'success');
+    closeModal('modal-encaminhar');
+    loadStats();
+    loadComplaints();
+  } catch (err) {
+    toast(err.message, 'error');
+  } finally {
+    btn.disabled = false; btn.textContent = '⚖️ Confirmar Encaminhamento';
+  }
+}
+
+function openStatus(id, currentStatus) {
+  activeComplaintId = id;
+  document.getElementById('status-novo').value = currentStatus;
+  document.getElementById('status-nota').value = '';
+  document.getElementById('modal-status').classList.remove('hidden');
+}
+
+async function submitStatus() {
+  const status = document.getElementById('status-novo').value;
+  const nota = document.getElementById('status-nota').value;
+
+  const btn = document.getElementById('status-submit');
+  btn.disabled = true; btn.textContent = 'Atualizando...';
+
+  try {
+    await apiFetch(`/denuncia/admin/${activeComplaintId}/status`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status, nota_interna: nota }),
+    });
+    toast(`✓ Status atualizado para ${statusLabel(status)}`, 'success');
+    closeModal('modal-status');
+    loadStats();
+    loadComplaints();
+  } catch (err) {
+    toast(err.message, 'error');
+  } finally {
+    btn.disabled = false; btn.textContent = '✓ Atualizar Status';
+  }
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// FILTERS / TABS / PAGINATION
+// ════════════════════════════════════════════════════════════════════════════
+function setFilter(field, value) {
+  if (field === 'status') document.getElementById('filter-status').value = value;
+  if (field === 'urgencia') document.getElementById('filter-urgencia').value = value;
+  if (field === 'envolve_menor') document.getElementById('filter-menor').value = value;
+  currentPage = 0;
+  switchTab('all', document.querySelector('.tab'));
+  loadComplaints();
+}
+
+function applyFilters() { currentPage = 0; loadComplaints(); }
+
+function clearFilters() {
+  document.getElementById('filter-status').value = '';
+  document.getElementById('filter-urgencia').value = '';
+  document.getElementById('filter-menor').value = '';
+  document.getElementById('filter-inicio').value = '';
+  document.getElementById('filter-fim').value = '';
+  currentPage = 0;
+  loadComplaints();
+}
+
+function switchTab(tab, el) {
+  currentTab = tab;
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  if (el) el.classList.add('active');
+  currentPage = 0;
+
+  const filterBar = document.getElementById('filter-bar');
+  filterBar.style.display = tab === 'sla' ? 'none' : 'flex';
+
+  loadComplaints();
+}
+
+function loadSlaTab() {
+  switchTab('sla', document.querySelectorAll('.tab')[1]);
+}
+
+function changePage(dir) {
+  currentPage += dir;
+  loadComplaints();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function updatePagination() {
+  const pagination = document.getElementById('pagination');
+  const info = document.getElementById('pagination-info');
+  const prevBtn = document.getElementById('prev-btn');
+  const nextBtn = document.getElementById('next-btn');
+
+  if (currentTab === 'sla' || totalComplaints <= PAGE_SIZE) {
+    pagination.classList.add('hidden'); return;
+  }
+
+  pagination.classList.remove('hidden');
+  const from = currentPage * PAGE_SIZE + 1;
+  const to = Math.min((currentPage + 1) * PAGE_SIZE, totalComplaints);
+  info.textContent = `${from}–${to} de ${totalComplaints}`;
+  prevBtn.disabled = currentPage === 0;
+  nextBtn.disabled = to >= totalComplaints;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// MODALS
+// ════════════════════════════════════════════════════════════════════════════
+function closeModal(id) {
+  document.getElementById(id).classList.add('hidden');
+}
+
+// Close on overlay click
+document.querySelectorAll('.modal-overlay').forEach(overlay => {
+  overlay.addEventListener('click', e => {
+    if (e.target === overlay) overlay.classList.add('hidden');
+  });
+});
+
+// Escape key
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') {
+    document.querySelectorAll('.modal-overlay:not(.hidden)').forEach(m => m.classList.add('hidden'));
+  }
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// UTILS
+// ════════════════════════════════════════════════════════════════════════════
+function toast(msg, type = 'success') {
+  const container = document.getElementById('toast-container');
+  const el = document.createElement('div');
+  el.className = `toast ${type}`;
+  el.innerHTML = `<span>${type === 'success' ? '✓' : '⚠️'}</span> ${escHtml(msg)}`;
+  container.appendChild(el);
+  setTimeout(() => { el.style.opacity = '0'; el.style.transition = '.3s'; setTimeout(() => el.remove(), 300); }, 3500);
+}
+
+function escHtml(str) {
+  if (!str) return '';
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function formatDate(iso) {
+  if (!iso) return '—';
+  try {
+    return new Intl.DateTimeFormat('pt-BR', {
+      day: '2-digit', month: '2-digit', year: 'numeric',
+      hour: '2-digit', minute: '2-digit',
+    }).format(new Date(iso));
+  } catch { return iso; }
+}
+
+function statusLabel(s) {
+  return { RECEBIDA: 'Recebida', TRIAGEM: 'Triagem', EM_APURACAO: 'Em Apuração', ENCERRADA: 'Encerrada' }[s] || s;
+}
+
+function encamLabel(e) {
+  return {
+    CONSELHO_TUTELAR: '👶 Conselho Tutelar',
+    DELEGACIA: '🚔 Delegacia',
+    PSICOLOGO: '🧠 Psicólogo',
+    MINISTERIO_PUBLICO: '⚖️ Ministério Público',
+    OUTRO: '📋 Outro',
+  }[e] || e;
+}
+</script>
+</body>
+</html>
