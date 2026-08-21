@@ -603,8 +603,12 @@
           </select>
         </div>
         <div class="field">
-          <label>Notas de Triagem</label>
-          <textarea id="triagem-notas" class="input" rows="4" placeholder="Observações internas sobre a análise..."></textarea>
+          <label>Notas de Triagem <span class="text-muted">(interna — não visível ao denunciante)</span></label>
+          <textarea id="triagem-notas" class="input" rows="3" placeholder="Observações internas sobre a análise..."></textarea>
+        </div>
+        <div class="field">
+          <label>💬 Mensagem ao denunciante <span class="text-muted">(opcional — aparecerá no app)</span></label>
+          <textarea id="triagem-nota-publica" class="input" rows="3" placeholder="Ex: Sua denúncia foi analisada pela equipe e encaminhada para triagem formal. Você será notificado sobre os próximos passos."></textarea>
         </div>
       </div>
     </div>
@@ -639,8 +643,12 @@
           </select>
         </div>
         <div class="field">
-          <label>Notas do Encaminhamento</label>
-          <textarea id="encam-notas" class="input" rows="4" placeholder="Nº BO, contatos, observações para o próximo atendente..."></textarea>
+          <label>Notas do Encaminhamento <span class="text-muted">(interna — não visível ao denunciante)</span></label>
+          <textarea id="encam-notas" class="input" rows="3" placeholder="Nº BO, contatos, observações para o próximo atendente..."></textarea>
+        </div>
+        <div class="field">
+          <label>💬 Mensagem ao denunciante <span class="text-muted">(opcional — aparecerá no app)</span></label>
+          <textarea id="encam-nota-publica" class="input" rows="3" placeholder="Ex: Sua denúncia foi encaminhada às autoridades competentes para apuração. Caso necessário, um responsável entrará em contato."></textarea>
         </div>
       </div>
     </div>
@@ -673,8 +681,12 @@
           </select>
         </div>
         <div class="field">
-          <label>Nota Interna</label>
-          <textarea id="status-nota" class="input" rows="3" placeholder="Observações internas (não visível ao denunciante)..."></textarea>
+          <label>💬 Mensagem ao denunciante <span class="text-muted">(opcional — aparecerá no app)</span></label>
+          <textarea id="status-nota-publica" class="input" rows="3" placeholder="Ex: Estamos apurando as informações fornecidas. Você será informado sobre os próximos passos em breve."></textarea>
+        </div>
+        <div class="field">
+          <label>Nota interna <span class="text-muted">(não visível ao denunciante)</span></label>
+          <textarea id="status-nota" class="input" rows="2" placeholder="Observações internas para a equipe..."></textarea>
         </div>
       </div>
     </div>
@@ -684,6 +696,7 @@
     </div>
   </div>
 </div>
+
 
 <!-- ── Toast container ─────────────────────────────────────────────────────── -->
 <div id="toast-container"></div>
@@ -1064,13 +1077,22 @@ async function openDetail(id) {
       html += d.historico.slice().reverse().map(h => `
         <div class="history-item">
           <div class="history-dot"></div>
-          <div>
+          <div style="flex:1">
             <div class="text-sm font-medium">
               <span class="badge badge-${h.status_de}" style="font-size:.65rem">${statusLabel(h.status_de)}</span>
               → <span class="badge badge-${h.status_para}" style="font-size:.65rem">${statusLabel(h.status_para)}</span>
             </div>
-            ${h.nota_interna ? `<div class="text-xs text-muted" style="margin-top:4px">${escHtml(h.nota_interna)}</div>` : ''}
-            <div class="text-xs text-muted" style="margin-top:4px">${formatDate(h.criado_em)}</div>
+            ${h.nota_publica ? `
+              <div style="margin-top:6px;background:rgba(34,197,94,.08);border:1px solid rgba(34,197,94,.25);border-radius:6px;padding:7px 10px;">
+                <div style="font-size:.65rem;font-weight:700;color:#86efac;letter-spacing:.05em;margin-bottom:3px;">💬 MENSAGEM AO DENUNCIANTE</div>
+                <div class="text-sm" style="color:var(--text)">${escHtml(h.nota_publica)}</div>
+              </div>` : ''}
+            ${h.nota_interna ? `
+              <div style="margin-top:6px;background:rgba(99,102,241,.08);border:1px solid rgba(99,102,241,.2);border-radius:6px;padding:7px 10px;">
+                <div style="font-size:.65rem;font-weight:700;color:#a5b4fc;letter-spacing:.05em;margin-bottom:3px;">🔒 NOTA INTERNA</div>
+                <div class="text-xs text-muted">${escHtml(h.nota_interna)}</div>
+              </div>` : ''}
+            <div class="text-xs text-muted" style="margin-top:5px">${formatDate(h.criado_em)}</div>
           </div>
         </div>`).join('');
     }
@@ -1109,6 +1131,7 @@ function openTriagem(id) {
   document.getElementById('triagem-categoria').value = '';
   document.getElementById('triagem-urgencia').value = '';
   document.getElementById('triagem-notas').value = '';
+  document.getElementById('triagem-nota-publica').value = '';
   document.getElementById('modal-triagem').classList.remove('hidden');
 }
 
@@ -1116,6 +1139,7 @@ async function submitTriagem() {
   const cat = document.getElementById('triagem-categoria').value;
   const urg = document.getElementById('triagem-urgencia').value;
   const notas = document.getElementById('triagem-notas').value;
+  const nota_publica = document.getElementById('triagem-nota-publica').value;
 
   if (!cat || !urg) { toast('Selecione categoria e urgência', 'error'); return; }
 
@@ -1125,7 +1149,7 @@ async function submitTriagem() {
   try {
     await apiFetch(`/denuncia/admin/${activeComplaintId}/triagem`, {
       method: 'PATCH',
-      body: JSON.stringify({ categoria_confirmada: cat, urgencia_confirmada: urg, notas }),
+      body: JSON.stringify({ categoria_confirmada: cat, urgencia_confirmada: urg, notas, nota_publica: nota_publica || null }),
     });
     toast('✓ Triagem realizada com sucesso!', 'success');
     closeModal('modal-triagem');
@@ -1142,12 +1166,14 @@ function openEncaminhar(id) {
   activeComplaintId = id;
   document.getElementById('encam-destino').value = '';
   document.getElementById('encam-notas').value = '';
+  document.getElementById('encam-nota-publica').value = '';
   document.getElementById('modal-encaminhar').classList.remove('hidden');
 }
 
 async function submitEncaminhar() {
   const dest = document.getElementById('encam-destino').value;
   const notas = document.getElementById('encam-notas').value;
+  const nota_publica = document.getElementById('encam-nota-publica').value;
 
   if (!dest) { toast('Selecione o destino do encaminhamento', 'error'); return; }
 
@@ -1157,7 +1183,7 @@ async function submitEncaminhar() {
   try {
     await apiFetch(`/denuncia/admin/${activeComplaintId}/encaminhar`, {
       method: 'PATCH',
-      body: JSON.stringify({ encaminhamento: dest, notas }),
+      body: JSON.stringify({ encaminhamento: dest, notas, nota_publica: nota_publica || null }),
     });
     toast('✓ Denúncia encaminhada com sucesso!', 'success');
     closeModal('modal-encaminhar');
@@ -1174,12 +1200,14 @@ function openStatus(id, currentStatus) {
   activeComplaintId = id;
   document.getElementById('status-novo').value = currentStatus;
   document.getElementById('status-nota').value = '';
+  document.getElementById('status-nota-publica').value = '';
   document.getElementById('modal-status').classList.remove('hidden');
 }
 
 async function submitStatus() {
   const status = document.getElementById('status-novo').value;
-  const nota = document.getElementById('status-nota').value;
+  const nota_interna = document.getElementById('status-nota').value;
+  const nota_publica = document.getElementById('status-nota-publica').value;
 
   const btn = document.getElementById('status-submit');
   btn.disabled = true; btn.textContent = 'Atualizando...';
@@ -1187,7 +1215,7 @@ async function submitStatus() {
   try {
     await apiFetch(`/denuncia/admin/${activeComplaintId}/status`, {
       method: 'PATCH',
-      body: JSON.stringify({ status, nota_interna: nota }),
+      body: JSON.stringify({ status, nota_interna: nota_interna || null, nota_publica: nota_publica || null }),
     });
     toast(`✓ Status atualizado para ${statusLabel(status)}`, 'success');
     closeModal('modal-status');
@@ -1199,6 +1227,7 @@ async function submitStatus() {
     btn.disabled = false; btn.textContent = '✓ Atualizar Status';
   }
 }
+
 
 // ════════════════════════════════════════════════════════════════════════════
 // FILTERS / TABS / PAGINATION

@@ -112,7 +112,8 @@ export interface DenunciaHistorico {
   denuncia_id: string;
   status_de: DenunciaStatus;
   status_para: DenunciaStatus;
-  nota_interna?: string | null;
+  nota_interna?: string | null;  // Nunca retornada ao denunciante
+  nota_publica?: string | null;  // Visível ao denunciante no endpoint público
   operador_id: string;
   criado_em: string;
 }

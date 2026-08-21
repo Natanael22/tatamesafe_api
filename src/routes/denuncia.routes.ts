@@ -173,10 +173,10 @@ router.get('/status/:protocolo', async (req, res) => {
   try {
     const { protocolo } = req.params;
 
-    // Busca denúncia + histórico de status numa única query
+    // Busca denúncia + histórico público (nunca expõe nota_interna nem operador_id)
     const { data: denuncia, error } = await supabaseVault
       .from('Denuncia')
-      .select('status, urgencia, criado_em, atualizado_em, historico:DenunciaHistorico(status_de, status_para, criado_em)')
+      .select('status, urgencia, criado_em, atualizado_em, historico:DenunciaHistorico(status_de, status_para, nota_publica, criado_em)')
       .eq('protocolo', protocolo)
       .order('criado_em', { referencedTable: 'DenunciaHistorico', ascending: true })
       .maybeSingle();
@@ -186,11 +186,11 @@ router.get('/status/:protocolo', async (req, res) => {
       return res.status(404).json({ error: 'Protocolo não encontrado' });
     }
 
-    const mensagensPublicas: Record<DenunciaStatus, string> = {
-      RECEBIDA: 'Denúncia recebida e aguardando triagem',
-      TRIAGEM: 'Denúncia em triagem pela equipe responsável',
-      EM_APURACAO: 'Denúncia em apuração pelas autoridades competentes',
-      ENCERRADA: 'Caso encerrado',
+    const mensagensGenericas: Record<DenunciaStatus, string> = {
+      RECEBIDA: 'Denúncia recebida e aguardando triagem.',
+      TRIAGEM: 'Denúncia em triagem pela equipe responsável.',
+      EM_APURACAO: 'Denúncia em apuração pelas autoridades competentes.',
+      ENCERRADA: 'Caso encerrado.',
     };
 
     const rotuloPorStatus: Record<string, string> = {
@@ -200,19 +200,23 @@ router.get('/status/:protocolo', async (req, res) => {
       ENCERRADA:   'Encerrada',
     };
 
-    // Primeira entrada do histórico = criação da denúncia (sem status_de)
+    // Primeira entrada sempre é a criação (RECEBIDA)
     const historicoPublico = [
       {
         status: 'RECEBIDA',
         rotulo: 'Recebida',
-        mensagem: 'Denúncia registrada com sucesso e aguardando triagem.',
+        // Mensagem padrão de criação — operador não pode alterar este ponto
+        mensagem: 'Sua denúncia foi registrada com segurança. Você receberá atualizações aqui conforme o caso avançar.',
+        nota_da_equipe: null as string | null,
         data: denuncia.criado_em,
       },
       ...(denuncia.historico || []).map((h: any) => ({
         status: h.status_para,
         rotulo: rotuloPorStatus[h.status_para] ?? h.status_para,
-        mensagem: mensagensPublicas[h.status_para as DenunciaStatus] ?? 'Status atualizado.',
-        // Exibe apenas a data e hora — nunca notas internas ou detalhes do operador
+        // Mensagem genérica descritiva da etapa
+        mensagem: mensagensGenericas[h.status_para as DenunciaStatus] ?? 'Status atualizado.',
+        // nota_da_equipe: mensagem personalizada deixada pelo operador — pode ser null
+        nota_da_equipe: h.nota_publica ?? null,
         data: h.criado_em,
       })),
     ];
@@ -221,7 +225,7 @@ router.get('/status/:protocolo', async (req, res) => {
       protocolo,
       status: denuncia.status,
       atualizado_em: denuncia.atualizado_em,
-      mensagem_publica: mensagensPublicas[denuncia.status as DenunciaStatus] || 'Em processamento',
+      mensagem_atual: mensagensGenericas[denuncia.status as DenunciaStatus] || 'Em processamento.',
       historico: historicoPublico,
     });
   } catch (error) {
@@ -229,6 +233,7 @@ router.get('/status/:protocolo', async (req, res) => {
     res.status(500).json({ error: 'Erro interno ao consultar status' });
   }
 });
+
 
 // ===========================================================================
 // ROTAS ADMINISTRATIVAS (requer ADMIN)
@@ -435,7 +440,7 @@ router.patch('/admin/:id/status', requireAuth, async (req, res) => {
     if (!user) return res.status(403).json({ error: 'Acesso negado' });
 
     const { id } = req.params;
-    const { status, nota_interna } = req.body;
+    const { status, nota_interna, nota_publica } = req.body;
 
     if (!status) return res.status(400).json({ error: 'O novo status é obrigatório' });
 
@@ -455,12 +460,15 @@ router.patch('/admin/:id/status', requireAuth, async (req, res) => {
     if (!denuncia) return res.status(404).json({ error: 'Denúncia não encontrada' });
 
     // Atualiza status e registra no histórico via função SQL atômica
+    // nota_publica: mensagem que será visível ao denunciante no endpoint público
     const { data: result, error } = await supabase.rpc('atualizar_status_denuncia', {
       p_id: id,
       p_status: status,
       p_operador_id: user.id,
       p_nota_interna: nota_interna || null,
+      p_nota_publica: nota_publica || null,
     });
+
 
     if (error) throw error;
 
@@ -491,7 +499,7 @@ router.patch('/admin/:id/triagem', requireAuth, async (req, res) => {
     if (!user) return res.status(403).json({ error: 'Acesso negado' });
 
     const { id } = req.params;
-    const { categoria_confirmada, urgencia_confirmada, notas } = req.body;
+    const { categoria_confirmada, urgencia_confirmada, notas, nota_publica } = req.body;
 
     if (!categoria_confirmada || !urgencia_confirmada) {
       return res.status(400).json({
@@ -559,12 +567,13 @@ router.patch('/admin/:id/triagem', requireAuth, async (req, res) => {
 
     await supabaseVault.from('Denuncia').update(updates).eq('id', id);
 
-    // 3. Registrar no histórico
+    // 3. Registrar no histórico com nota pública opcional ao denunciante
     await supabase.rpc('atualizar_status_denuncia', {
       p_id: id,
       p_status: 'TRIAGEM',
       p_operador_id: user.id,
       p_nota_interna: `Triagem realizada. Categoria: ${categoria_confirmada}, Urgência: ${urgencia_confirmada}. ${notas || ''}`.trim(),
+      p_nota_publica: nota_publica || null,
     });
 
     logger.info(`Triagem da denúncia ${id} realizada pelo operador ${user.id}`);
@@ -592,7 +601,7 @@ router.patch('/admin/:id/encaminhar', requireAuth, async (req, res) => {
     if (!user) return res.status(403).json({ error: 'Acesso negado' });
 
     const { id } = req.params;
-    const { encaminhamento, notas } = req.body;
+    const { encaminhamento, notas, nota_publica } = req.body;
 
     if (!encaminhamento) {
       return res.status(400).json({ error: 'Campo obrigatório: encaminhamento' });
@@ -635,12 +644,13 @@ router.patch('/admin/:id/encaminhar', requireAuth, async (req, res) => {
 
     if (updateError) throw updateError;
 
-    // 2. Registrar no histórico
+    // 2. Registrar no histórico com nota pública opcional ao denunciante
     await supabase.rpc('atualizar_status_denuncia', {
       p_id: id,
       p_status: 'EM_APURACAO',
       p_operador_id: user.id,
       p_nota_interna: `Encaminhado para: ${encaminhamento}. ${notas || ''}`.trim(),
+      p_nota_publica: nota_publica || null,
     });
 
     const nomeEncaminhamento: Record<EncaminhamentoTipo, string> = {
