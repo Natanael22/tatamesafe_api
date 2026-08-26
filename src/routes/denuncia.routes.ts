@@ -16,6 +16,7 @@ import {
   type EncaminhamentoTipo,
 } from '../types/database.types';
 import logger from '../lib/logger';
+import pushService from '../services/push.service';
 
 const router = Router();
 const connection = new Redis(process.env.REDIS_URL || 'redis://localhost:6379', {
@@ -235,9 +236,84 @@ router.get('/status/:protocolo', async (req, res) => {
 });
 
 
+// ---------------------------------------------------------------------------
+// POST /status/:protocolo/notificacoes — Inscrever aparelho para receber push
+// ---------------------------------------------------------------------------
+router.post('/status/:protocolo/notificacoes', async (req, res) => {
+  try {
+    const { protocolo } = req.params;
+    const { push_token } = req.body;
+
+    if (!push_token) {
+      return res.status(400).json({ error: 'O push_token é obrigatório' });
+    }
+
+    // Acha a denúncia pelo protocolo (para pegar o ID)
+    const { data: denuncia, error: errBusca } = await supabaseVault
+      .from('Denuncia')
+      .select('id')
+      .eq('protocolo', protocolo)
+      .maybeSingle();
+
+    if (errBusca) throw errBusca;
+    if (!denuncia) return res.status(404).json({ error: 'Protocolo não encontrado' });
+
+    // Salva o token na nova tabela
+    const { error: errInsert } = await supabaseVault
+      .from('DenunciaPushToken')
+      .insert({
+        denuncia_id: denuncia.id,
+        push_token,
+      });
+
+    // Ignora erro de chave duplicada (se o aparelho já se inscreveu)
+    if (errInsert && errInsert.code !== '23505') {
+      throw errInsert;
+    }
+
+    res.json({ message: 'Token registrado com sucesso' });
+  } catch (error) {
+    logger.error(error, 'Erro ao registrar token de notificação');
+    res.status(500).json({ error: 'Erro interno ao registrar notificação' });
+  }
+});
+
 // ===========================================================================
 // ROTAS ADMINISTRATIVAS (requer ADMIN)
 // ===========================================================================
+
+// ---------------------------------------------------------------------------
+// Auxiliar: disparar push notifications para a denúncia
+// ---------------------------------------------------------------------------
+async function notificarDenunciante(denunciaId: string, status: DenunciaStatus) {
+  try {
+    const { data: tokensInfo } = await supabaseVault
+      .from('DenunciaPushToken')
+      .select('push_token')
+      .eq('denuncia_id', denunciaId);
+
+    if (!tokensInfo || tokensInfo.length === 0) return;
+
+    const tokens = tokensInfo.map((t) => t.push_token);
+
+    const rotuloPorStatus: Record<string, string> = {
+      RECEBIDA:    'Recebida',
+      TRIAGEM:     'Em Triagem',
+      EM_APURACAO: 'Em Apuração',
+      ENCERRADA:   'Encerrada',
+    };
+
+    const statusRotulo = rotuloPorStatus[status] || status;
+
+    // Dispara a notificação de forma assíncrona (sem bloquear a requisição atual)
+    pushService.enviarNotificacaoStatus(tokens, statusRotulo).catch((err) => {
+      logger.error(err, `Falha no PushService para denúncia ${denunciaId}`);
+    });
+  } catch (err) {
+    logger.error(err, `Falha ao buscar tokens para a denúncia ${denunciaId}`);
+  }
+}
+
 
 // ---------------------------------------------------------------------------
 // GET /admin/stats — Estatísticas do painel de administração
@@ -439,7 +515,7 @@ router.patch('/admin/:id/status', requireAuth, async (req, res) => {
     const user = await verificarAdmin(req.user?.sub);
     if (!user) return res.status(403).json({ error: 'Acesso negado' });
 
-    const { id } = req.params;
+    const id = req.params.id as string;
     const { status, nota_interna, nota_publica } = req.body;
 
     if (!status) return res.status(400).json({ error: 'O novo status é obrigatório' });
@@ -480,6 +556,7 @@ router.patch('/admin/:id/status', requireAuth, async (req, res) => {
       .is('operador_id', null);
 
     logger.info(`Denúncia ${id} teve status atualizado para ${status} pelo operador ${user.id}`);
+    notificarDenunciante(id, status);
     res.json(result);
   } catch (error) {
     logger.error(error, 'Erro ao atualizar status da denúncia');
@@ -498,7 +575,7 @@ router.patch('/admin/:id/triagem', requireAuth, async (req, res) => {
     const user = await verificarAdmin(req.user?.sub);
     if (!user) return res.status(403).json({ error: 'Acesso negado' });
 
-    const { id } = req.params;
+    const id = req.params.id as string;
     const { categoria_confirmada, urgencia_confirmada, notas, nota_publica } = req.body;
 
     if (!categoria_confirmada || !urgencia_confirmada) {
@@ -577,6 +654,7 @@ router.patch('/admin/:id/triagem', requireAuth, async (req, res) => {
     });
 
     logger.info(`Triagem da denúncia ${id} realizada pelo operador ${user.id}`);
+    notificarDenunciante(id, 'TRIAGEM');
 
     res.json({
       message: 'Triagem realizada com sucesso',
@@ -600,8 +678,9 @@ router.patch('/admin/:id/encaminhar', requireAuth, async (req, res) => {
     const user = await verificarAdmin(req.user?.sub);
     if (!user) return res.status(403).json({ error: 'Acesso negado' });
 
-    const { id } = req.params;
+    const id = req.params.id as string;
     const { encaminhamento, notas, nota_publica } = req.body;
+
 
     if (!encaminhamento) {
       return res.status(400).json({ error: 'Campo obrigatório: encaminhamento' });
@@ -662,6 +741,7 @@ router.patch('/admin/:id/encaminhar', requireAuth, async (req, res) => {
     };
 
     logger.info(`Denúncia ${id} encaminhada para ${encaminhamento} pelo operador ${user.id}`);
+    notificarDenunciante(id, 'EM_APURACAO');
 
     res.json({
       message: `Denúncia encaminhada para ${nomeEncaminhamento[encaminhamento as EncaminhamentoTipo]} com sucesso`,

@@ -8,6 +8,6 @@ doc_content.txt
 TatameSafe_EspecificacaoTecnica.docx
 generate-tokens.ts
 
-/supabase/migrations/*
+
 /keys
 *.pem
