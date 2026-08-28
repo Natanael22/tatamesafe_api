@@ -9,7 +9,9 @@ class PushService {
 
     // Usando import dinâmico pois expo-server-sdk é ESM
     const { Expo } = await import('expo-server-sdk');
-    const expo = new Expo();
+    const expo = new Expo({
+      accessToken: process.env.EXPO_ACCESS_TOKEN, // Necessário se você usa EAS/Expo.dev
+    });
 
     // Filtra apenas tokens válidos
     const tokensValidos = tokens.filter((token) => Expo.isExpoPushToken(token));
@@ -38,8 +40,17 @@ class PushService {
       try {
         const ticketChunk = await expo.sendPushNotificationsAsync(chunk);
         tickets.push(...ticketChunk);
+
+        // Verifica se houve erros (InvalidCredentials, DeviceNotRegistered, etc)
+        for (const ticket of ticketChunk) {
+          if (ticket.status === 'error') {
+            logger.error(
+              `Erro retornado pela Expo no envio do push: ${ticket.message} (Detalhes: ${JSON.stringify(ticket.details)})`
+            );
+          }
+        }
       } catch (error) {
-        logger.error(error, 'Erro ao enviar chunk de push notifications via Expo');
+        logger.error(error, 'Erro de rede/comunicação ao enviar chunk de push notifications via Expo');
       }
     }
 
