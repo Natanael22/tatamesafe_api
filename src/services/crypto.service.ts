@@ -7,6 +7,18 @@ export class CryptoService {
   private static privateKey: string | null = null;
 
   public static initializeKeys() {
+    // ─── PRIORIDADE 1: Variáveis de ambiente (obrigatório na Vercel/serverless) ───
+    // As chaves PEM devem estar em RSA_PRIVATE_KEY e RSA_PUBLIC_KEY.
+    // No valor da variável, use \n literal para representar quebras de linha,
+    // ou codifique em base64 (o código abaixo detecta automaticamente).
+    if (process.env.RSA_PRIVATE_KEY && process.env.RSA_PUBLIC_KEY) {
+      this.privateKey = this.decodePemEnv(process.env.RSA_PRIVATE_KEY);
+      this.publicKey = this.decodePemEnv(process.env.RSA_PUBLIC_KEY);
+      console.log('Chaves RSA carregadas das variáveis de ambiente.');
+      return;
+    }
+
+    // ─── PRIORIDADE 2: Arquivos no disco (desenvolvimento local) ─────────────
     const keyPath = process.env.RSA_PRIVATE_KEY_PATH 
       ? path.resolve(process.env.RSA_PRIVATE_KEY_PATH) 
       : path.join(__dirname, '../../keys/rsa_private.pem');
@@ -15,37 +27,64 @@ export class CryptoService {
     if (fs.existsSync(keyPath) && fs.existsSync(pubPath)) {
       this.privateKey = fs.readFileSync(keyPath, 'utf8');
       this.publicKey = fs.readFileSync(pubPath, 'utf8');
-    } else {
-      console.warn(`Chaves RSA não encontradas no disco. Gerando e persistindo novo par de chaves em: ${keyPath}`);
-      try {
-        const dir = path.dirname(keyPath);
-        if (!fs.existsSync(dir)) {
-          fs.mkdirSync(dir, { recursive: true });
-        }
-        
-        const { publicKey, privateKey } = crypto.generateKeyPairSync('rsa', {
-          modulusLength: 2048,
-          publicKeyEncoding: { type: 'spki', format: 'pem' },
-          privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
-        });
+      console.log(`Chaves RSA carregadas do disco: ${keyPath}`);
+      return;
+    }
 
-        fs.writeFileSync(keyPath, privateKey, 'utf8');
-        fs.writeFileSync(pubPath, publicKey, 'utf8');
+    // ─── PRIORIDADE 3: Gerar novas chaves APENAS em desenvolvimento ──────────
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error(
+        'FATAL: Chaves RSA não encontradas em produção! ' +
+        'Configure as variáveis de ambiente RSA_PRIVATE_KEY e RSA_PUBLIC_KEY na Vercel. ' +
+        'Sem isso, cada deploy gera chaves novas e as denúncias anteriores ficam irrecuperáveis.'
+      );
+    }
 
-        this.privateKey = privateKey;
-        this.publicKey = publicKey;
-      } catch (err) {
-        console.error('Erro ao salvar as chaves RSA geradas no disco. Usando chaves efêmeras em memória...', err);
-        const { publicKey, privateKey } = crypto.generateKeyPairSync('rsa', {
-          modulusLength: 2048,
-          publicKeyEncoding: { type: 'spki', format: 'pem' },
-          privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
-        });
-        this.publicKey = publicKey;
-        this.privateKey = privateKey;
+    console.warn('⚠️  DEV: Chaves RSA não encontradas. Gerando novo par de chaves...');
+    try {
+      const dir = path.dirname(keyPath);
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
       }
+      
+      const { publicKey, privateKey } = crypto.generateKeyPairSync('rsa', {
+        modulusLength: 2048,
+        publicKeyEncoding: { type: 'spki', format: 'pem' },
+        privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
+      });
+
+      fs.writeFileSync(keyPath, privateKey, 'utf8');
+      fs.writeFileSync(pubPath, publicKey, 'utf8');
+
+      this.privateKey = privateKey;
+      this.publicKey = publicKey;
+    } catch (err) {
+      console.error('Erro ao salvar as chaves RSA geradas no disco. Usando chaves efêmeras em memória...', err);
+      const { publicKey, privateKey } = crypto.generateKeyPairSync('rsa', {
+        modulusLength: 2048,
+        publicKeyEncoding: { type: 'spki', format: 'pem' },
+        privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
+      });
+      this.publicKey = publicKey;
+      this.privateKey = privateKey;
     }
   }
+
+  /**
+   * Decodifica o valor de uma variável de ambiente que contém uma chave PEM.
+   * Suporta dois formatos:
+   *  - PEM direto com \n escapado (ex: "-----BEGIN...-----\nMIIE...\n-----END...-----")
+   *  - PEM codificado em base64 (para evitar problemas com \n em painéis como Vercel)
+   */
+  private static decodePemEnv(value: string): string {
+    // Se já começa com "-----BEGIN", é PEM direto (possivelmente com \n literal)
+    if (value.startsWith('-----BEGIN')) {
+      return value.replace(/\\n/g, '\n');
+    }
+    // Caso contrário, assume base64
+    return Buffer.from(value, 'base64').toString('utf8');
+  }
+
 
   public static getPublicKey(): string {
     if (!this.publicKey) this.initializeKeys();
