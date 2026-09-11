@@ -16,7 +16,7 @@ const SESSION_DURATION_SECONDS = 60 * 60;
 // Auxiliar: cria um JWT compatível com o middleware requireAuth.
 // O token contém os campos padrão esperados pelo jwt.verify() local.
 // ---------------------------------------------------------------------------
-function createLocalSession(auth_id: string, email: string) {
+function createLocalSession(auth_id: string, email: string, user_id: string, tipo: string) {
   const jwtSecret = process.env.JWT_SECRET!;
   const now = Math.floor(Date.now() / 1000);
 
@@ -24,6 +24,8 @@ function createLocalSession(auth_id: string, email: string) {
     {
       sub: auth_id,
       email,
+      local_id: user_id,
+      tipo: tipo,
       role: 'authenticated',
       aud: 'authenticated',
       iat: now,
@@ -167,7 +169,7 @@ router.post('/signup/aluno', async (req, res) => {
     }
 
     // 5. Criar sessão local (JWT)
-    const session = createLocalSession(auth_id, email);
+    const session = createLocalSession(auth_id, email, userRecord.id, userRecord.tipo);
 
     // Retornar sem expor senha_hash
     const { senha_hash: _, ...userPublic } = userRecord;
@@ -337,7 +339,7 @@ router.post('/signup/academia', async (req, res) => {
     }
 
     // 6. Criar sessão local (JWT)
-    const session = createLocalSession(auth_id, email);
+    const session = createLocalSession(auth_id, email, userRecord.id, userRecord.tipo);
 
     const { senha_hash: _, ...userPublic } = userRecord;
 
@@ -394,7 +396,7 @@ router.post('/signin', async (req, res) => {
     }
 
     // 3. Emitir JWT local
-    const session = createLocalSession(user.auth_id, user.email);
+    const session = createLocalSession(user.auth_id, user.email, user.id, user.tipo);
 
     // Retornar sem expor senha_hash
     const { senha_hash: _, ...userPublic } = user;

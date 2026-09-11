@@ -1,6 +1,5 @@
 import { Router } from 'express';
 import { Queue } from 'bullmq';
-import Redis from 'ioredis';
 import multer from 'multer';
 import supabase from '../lib/supabase';
 import { supabaseVault } from '../lib/supabase';
@@ -8,6 +7,7 @@ import { denunciaLimiter } from '../middlewares/rateLimiter';
 import { requireAuth } from '../middlewares/auth.middleware';
 import { StorageService } from '../lib/storage';
 import { CryptoService } from '../services/crypto.service';
+import redisClient from '../lib/redis';
 import {
   SLA_HORAS,
   type DenunciaStatus,
@@ -19,10 +19,7 @@ import logger from '../lib/logger';
 import pushService from '../services/push.service';
 
 const router = Router();
-const connection = new Redis(process.env.REDIS_URL || 'redis://localhost:6379', {
-  maxRetriesPerRequest: null,
-});
-const denunciaQueue = new Queue('denuncia-queue', { connection });
+const denunciaQueue = new Queue('denuncia-queue', { connection: redisClient });
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -30,16 +27,26 @@ const upload = multer({
 });
 
 // ---------------------------------------------------------------------------
-// Auxiliar: verifica se o usuário é ADMIN
+// Auxiliar: verifica se o usuário tem permissões administrativas (ADMIN ou OPERADOR)
 // ---------------------------------------------------------------------------
-async function verificarAdmin(auth_id: string) {
+async function verificarAdmin(reqUser: any) {
+  if (!reqUser) return null;
+
+  // Otimização: Se o JWT já contiver tipo e local_id, evitar query ao banco (reduz tempo de resposta)
+  if (reqUser.tipo && reqUser.local_id) {
+    if (!['ADMIN', 'OPERADOR'].includes(reqUser.tipo)) return null;
+    return { id: reqUser.local_id, tipo: reqUser.tipo, email: reqUser.email };
+  }
+
+  // Fallback se o JWT for antigo e não tiver essas propriedades
   const { data: user } = await supabase
     .from('User')
     .select('id, tipo, nome')
-    .eq('auth_id', auth_id)
+    .eq('auth_id', reqUser.sub)
     .maybeSingle();
 
-  if (!user || user.tipo !== 'ADMIN') return null;
+  // Permite acesso tanto para ADMIN quanto para OPERADOR
+  if (!user || !['ADMIN', 'OPERADOR'].includes(user.tipo)) return null;
   return user;
 }
 
@@ -103,6 +110,11 @@ router.post('/', upload.single('evidencia'), denunciaLimiter, async (req, res) =
     }
 
     const bufferDesc = Buffer.from(descricao_enc, 'base64');
+
+    // Validação de segurança: Impede payloads gigantes que exaurem o banco (limite 50KB)
+    if (bufferDesc.length > 50 * 1024) {
+      return res.status(400).json({ error: 'O texto da denúncia excede o limite máximo permitido (50KB)' });
+    }
 
     const { data, error } = await supabase.rpc('inserir_denuncia', {
       p_tipo: tipo,
@@ -320,7 +332,7 @@ async function notificarDenunciante(denunciaId: string, status: DenunciaStatus) 
 // ---------------------------------------------------------------------------
 router.get('/admin/stats', requireAuth, async (req, res) => {
   try {
-    const user = await verificarAdmin(req.user?.sub);
+    const user = await verificarAdmin(req.user);
     if (!user) return res.status(403).json({ error: 'Acesso negado: Requer privilégios de administrador' });
 
     const { data: denuncias, error } = await supabaseVault
@@ -377,7 +389,7 @@ router.get('/admin/stats', requireAuth, async (req, res) => {
 // ---------------------------------------------------------------------------
 router.get('/admin/sla', requireAuth, async (req, res) => {
   try {
-    const user = await verificarAdmin(req.user?.sub);
+    const user = await verificarAdmin(req.user);
     if (!user) return res.status(403).json({ error: 'Acesso negado' });
 
     const { apenas_violacoes } = req.query;
@@ -413,7 +425,7 @@ router.get('/admin/sla', requireAuth, async (req, res) => {
 // ---------------------------------------------------------------------------
 router.get('/admin', requireAuth, async (req, res) => {
   try {
-    const user = await verificarAdmin(req.user?.sub);
+    const user = await verificarAdmin(req.user);
     if (!user) return res.status(403).json({ error: 'Acesso negado' });
 
     const {
@@ -475,7 +487,7 @@ router.get('/admin', requireAuth, async (req, res) => {
 // ---------------------------------------------------------------------------
 router.get('/admin/:id', requireAuth, async (req, res) => {
   try {
-    const user = await verificarAdmin(req.user?.sub);
+    const user = await verificarAdmin(req.user);
     if (!user) return res.status(403).json({ error: 'Acesso negado' });
 
     const { id } = req.params;
@@ -512,7 +524,7 @@ router.get('/admin/:id', requireAuth, async (req, res) => {
 // ---------------------------------------------------------------------------
 router.patch('/admin/:id/status', requireAuth, async (req, res) => {
   try {
-    const user = await verificarAdmin(req.user?.sub);
+    const user = await verificarAdmin(req.user);
     if (!user) return res.status(403).json({ error: 'Acesso negado' });
 
     const id = req.params.id as string;
@@ -572,7 +584,7 @@ router.patch('/admin/:id/status', requireAuth, async (req, res) => {
 // ---------------------------------------------------------------------------
 router.patch('/admin/:id/triagem', requireAuth, async (req, res) => {
   try {
-    const user = await verificarAdmin(req.user?.sub);
+    const user = await verificarAdmin(req.user);
     if (!user) return res.status(403).json({ error: 'Acesso negado' });
 
     const id = req.params.id as string;
@@ -632,7 +644,7 @@ router.patch('/admin/:id/triagem', requireAuth, async (req, res) => {
     // 2. Atualizar urgência e operador na denúncia se mudou
     const updates: Record<string, any> = {
       operador_id: user.id,
-      status: 'TRIAGEM',
+      // O status é atualizado de forma atômica pela RPC abaixo.
     };
     if (urgencia_confirmada !== denuncia.urgencia) {
       updates.urgencia = urgencia_confirmada;
@@ -675,7 +687,7 @@ router.patch('/admin/:id/triagem', requireAuth, async (req, res) => {
 // ---------------------------------------------------------------------------
 router.patch('/admin/:id/encaminhar', requireAuth, async (req, res) => {
   try {
-    const user = await verificarAdmin(req.user?.sub);
+    const user = await verificarAdmin(req.user);
     if (!user) return res.status(403).json({ error: 'Acesso negado' });
 
     const id = req.params.id as string;

@@ -113,7 +113,43 @@ export class CryptoService {
         buffer = Buffer.from(encryptedData, 'base64');
       }
 
-      // O tamanho do bloco cifrado para RSA 2048 é sempre 256 bytes
+      // ── Tenta parsear como formato v2 (híbrido) ──────────────────────
+      try {
+        const raw = buffer.toString('utf8');
+        const outer = JSON.parse(
+          raw.startsWith('{') ? raw : Buffer.from(raw, 'base64').toString('utf8')
+        );
+
+        if (outer.v === 2 && outer.key && outer.iv && outer.tag && outer.ct) {
+          // 1. Decifrar a chave AES com RSA
+          const wrappedKey = Buffer.from(outer.key, 'base64');
+          const aesKey = crypto.privateDecrypt(
+            {
+              key: privateKey,
+              padding: crypto.constants.RSA_PKCS1_OAEP_PADDING,
+              oaepHash: 'sha256',
+            },
+            wrappedKey
+          );
+
+          // 2. Decifrar o texto com AES-256-GCM
+          const iv = Buffer.from(outer.iv, 'base64');
+          const tag = Buffer.from(outer.tag, 'base64');
+          const ct = Buffer.from(outer.ct, 'base64');
+
+          const decipher = crypto.createDecipheriv('aes-256-gcm', aesKey, iv);
+          decipher.setAuthTag(tag);
+
+          let decrypted = decipher.update(ct, undefined, 'utf8');
+          decrypted += decipher.final('utf8');
+
+          return decrypted;
+        }
+      } catch {
+        // Não é formato v2 — cai no fallback abaixo
+      }
+
+      // ── Fallback: formato v1 (RSA puro / chunking) ───────────────────
       const CHUNK_SIZE = 256;
       
       // Se for maior que um bloco e múltiplo, significa que foi cifrado em partes (chunking)
